@@ -1043,6 +1043,8 @@ Medical PDFs
 
 <br/>
 
+<a name="️-voice-input--cross-browser-architecture-"></a>
+
 **✦ 🎙️ Voice Input — Cross-Browser Architecture** 🆕
 
 Medibot includes a fully custom voice input button (`render_voice_input()`) rendered via `streamlit.components.v1.html()`. It uses a **dual-engine smart detection** system that automatically picks the right voice backend based on the browser and security context — requiring zero configuration from the user.
@@ -1839,6 +1841,8 @@ This project is an applied AI healthcare prototype, so validation has two sides:
 - [ ] More disease classes (target: 100+)
 
 ---
+
+<a name="-creator"></a>
 
 ## 👨‍💻 Creator
 
