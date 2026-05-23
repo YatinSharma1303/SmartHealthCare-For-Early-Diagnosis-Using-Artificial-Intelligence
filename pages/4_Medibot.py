@@ -412,7 +412,6 @@ def render_voice_input():
         height=70,
     )
 
-
 def render_page_styles():
     # Preconnect + non-blocking font load (faster than @import inside <style>)
     st.markdown(
@@ -3701,6 +3700,7 @@ def render_symptom_checker():
                 f"Severity: {st.session_state.symptom_severity}. "
                 f"What could this indicate and what should I do?"
             )
+            st.session_state._switch_to_chat_tab = True
             st.rerun()
 
         st.markdown(
@@ -4119,6 +4119,36 @@ def main():
         "📊  Health Score",
         "🔖  Saved Answers",
     ])
+
+    # ── Auto-switch to Chat tab when coming from Symptom Checker ──────────
+    if st.session_state.pop("_switch_to_chat_tab", False):
+        components.html(
+            """
+<script>
+(function() {
+    function switchToChat() {
+        var tabs = window.parent.document.querySelectorAll('[role="tab"]');
+        for (var i = 0; i < tabs.length; i++) {
+            if (tabs[i].innerText && tabs[i].innerText.trim().replace(/\\s+/g,' ').indexOf('Chat') !== -1) {
+                tabs[i].click();
+                return true;
+            }
+        }
+        return false;
+    }
+    if (!switchToChat()) {
+        var attempts = 0;
+        var interval = setInterval(function() {
+            attempts++;
+            if (switchToChat() || attempts >= 10) clearInterval(interval);
+        }, 120);
+    }
+})();
+</script>
+""",
+            height=0,
+            width=0,
+        )
 
     with tab_chat:
         st.markdown("<div class='md-section-title'>Conversation</div>", unsafe_allow_html=True)
