@@ -1391,7 +1391,7 @@ theme_config.py
 ## 🗂️ Project Structure
 
 ```
-SmartHealthCareAI-master/
+SmartHealthCare-For-Early-Diagnosis-Using-Artificial-Intelligence/
 │
 ├── 🏠 home.py                              # Landing page (Streamlit entry point)
 ├── 🎨 theme_config.py                      # Dark/Light theme engine + global CSS tokens
