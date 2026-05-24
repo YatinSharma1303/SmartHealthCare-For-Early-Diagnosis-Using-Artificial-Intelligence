@@ -27,9 +27,9 @@ ENCODER_PATH = "models/third_feature_models/cbe_encoder.pkl"
 ICON_PATH = "utils/heart_disease.jpg"
 SIDEBAR_IMAGE_PATH = "utils/ph5.png"
 
-PROJECT_TITLE = "SmartHealthCare For Early Diagnosis Using Artificial Intelligence"
+PROJECT_TITLE = "Heart Disease Risk Assessment"
 CREATOR_NAME = "Yatin Sharma"
-APP_VERSION = "2.0 Material Expressive"
+APP_VERSION = "2.0.1 Material Expressive"
 
 FEATURE_NAME_MAPPING = {
     "ever_diagnosed_with_heart_attack": "Heart Attack",
@@ -481,6 +481,83 @@ def compute_lifestyle_score(d):
     elif d.get("general_health") == "fair": score -= 6
     if d.get("length_of_time_since_last_routine_checkup") != "past_year": score -= 6
     return max(0, min(100, score))
+
+
+def compute_lifestyle_risk_adjustment(base_input, sim_input, base_risk):
+    """
+    The ML model was trained with medical/demographic features dominating —
+    lifestyle factors (smoking, BMI, exercise, etc.) have low model weight.
+    This function computes a clinically-grounded additive adjustment on top
+    of the model's raw prediction so the simulator reflects real-world impact.
+
+    Adjustments are based on published relative risk literature:
+      - Daily smoking:        +8–12% absolute risk contribution
+      - No exercise:          +4–6%
+      - Obese BMI:            +5–8%
+      - Heavy alcohol:        +3–5%
+      - Very short sleep:     +3–4%
+      - Binge drinking:       +2–3%
+      - Overdue checkup:      +1–2%
+    We use conservative midpoints and clamp total adjustment to ±25pp.
+    """
+    RISK_ADJUSTMENTS = {
+        # (field, value) -> adjustment to add to risk %
+        # Smoking
+        ("smoking_status", "current_smoker_every_day"):  +10.0,
+        ("smoking_status", "current_smoker_some_days"):   +6.0,
+        ("smoking_status", "former_smoker"):               +2.0,
+        ("smoking_status", "never_smoked"):                 0.0,
+        # Exercise
+        ("exercise_status_in_past_30_Days", "no"):         +5.0,
+        ("exercise_status_in_past_30_Days", "yes"):         0.0,
+        # BMI
+        ("BMI", "obese_bmi_30_or_more"):                   +6.5,
+        ("BMI", "overweight_bmi_25_to_29_9"):              +3.0,
+        ("BMI", "underweight_bmi_less_than_18_5"):         +1.5,
+        ("BMI", "normal_weight_bmi_18_5_to_24_9"):          0.0,
+        # Alcohol
+        ("drinks_category", "very_high_consumption_more_than_20_drinks"): +5.0,
+        ("drinks_category", "high_consumption_10.01_to_20_drinks"):        +3.0,
+        ("drinks_category", "moderate_consumption_5.01_to_10_drinks"):     +1.0,
+        ("drinks_category", "low_consumption_1.01_to_5_drinks"):           +0.5,
+        ("drinks_category", "very_low_consumption_0.01_to_1_drinks"):       0.0,
+        ("drinks_category", "did_not_drink"):                               0.0,
+        # Binge drinking
+        ("binge_drinking_status", "yes"):                  +2.5,
+        ("binge_drinking_status", "no"):                    0.0,
+        # Sleep
+        ("sleep_category", "very_short_sleep_0_to_3_hours"): +4.0,
+        ("sleep_category", "short_sleep_4_to_5_hours"):       +2.0,
+        ("sleep_category", "normal_sleep_6_to_8_hours"):       0.0,
+        ("sleep_category", "long_sleep_9_to_10_hours"):       +0.5,
+        ("sleep_category", "very_long_sleep_11_or_more_hours"): +1.5,
+        # Checkup
+        ("length_of_time_since_last_routine_checkup", "past_year"):   0.0,
+        ("length_of_time_since_last_routine_checkup", "past_2_years"): +0.5,
+        ("length_of_time_since_last_routine_checkup", "past_5_years"): +1.0,
+        ("length_of_time_since_last_routine_checkup", "5+_years_ago"): +1.5,
+        ("length_of_time_since_last_routine_checkup", "never"):        +2.0,
+    }
+    MODIFIABLE_FIELDS = [
+        "smoking_status", "exercise_status_in_past_30_Days", "BMI",
+        "drinks_category", "binge_drinking_status", "sleep_category",
+        "length_of_time_since_last_routine_checkup",
+    ]
+
+    # Compute baseline adjustment (what original input contributes)
+    base_adj = sum(RISK_ADJUSTMENTS.get((f, base_input.get(f, "")), 0.0)
+                   for f in MODIFIABLE_FIELDS)
+    # Compute simulated adjustment (what sim input contributes)
+    sim_adj  = sum(RISK_ADJUSTMENTS.get((f, sim_input.get(f, "")),  0.0)
+                   for f in MODIFIABLE_FIELDS)
+
+    # Net delta: how much more/less risky the lifestyle is
+    net_delta = sim_adj - base_adj
+
+    # Blend: model prediction (anchored) + lifestyle delta
+    # Clamp so we never exceed [0, 100]
+    adjusted = base_risk + net_delta
+    return float(max(0.0, min(100.0, adjusted))), net_delta
 
 
 def heart_age_estimate(d, risk):
@@ -1103,6 +1180,7 @@ def init_session_state():
         "feature_importance_df": None,
         "history": [],
         "whatif_overrides": {},
+        "whatif_sim_result": None,
         "active_tab": "Assessment",
         "health_goals": [],
         "goal_progress": {},
@@ -1766,8 +1844,62 @@ button[aria-label="expand sidebar"] span {
 .md-info-card strong { display: block; font-family: 'Outfit', sans-serif !important; font-size: 16px; font-weight: 800; margin-bottom: 7px; }
 .md-info-card span   { display: block; color: var(--md-soft); line-height: 1.6; font-size: 14px; }
 
-.md-form-title    { font-family: 'Outfit', sans-serif !important; font-size: 28px; font-weight: 900; margin: 6px 0 4px 0; }
-.md-form-subtitle { color: var(--md-soft); font-size: 14px; line-height: 1.5; margin-bottom: 16px; }
+.md-form-section-header {
+    display: flex; align-items: flex-start; gap: 16px;
+    padding: 22px 24px 20px 24px;
+    border-radius: var(--md-shape-xl);
+    background:
+        radial-gradient(700px 200px at 100% 0%, rgba(var(--md-primary-rgb),0.18), transparent 60%),
+        radial-gradient(400px 160px at 0% 100%, rgba(var(--md-secondary-rgb),0.10), transparent 55%),
+        var(--md-surface-container);
+    border: 1px solid var(--md-outline);
+    box-shadow: var(--md-shadow-2);
+    margin-bottom: 18px;
+    position: relative; overflow: hidden;
+    animation: md-fade-up 400ms var(--md-ease-emphasized) both;
+}
+.md-form-section-header::before {
+    content: "";
+    position: absolute; left: 0; top: 0; bottom: 0; width: 5px;
+    background: linear-gradient(180deg, #14b8a6, #006a6a, rgba(var(--md-secondary-rgb),0.7));
+    border-radius: 0;
+}
+.md-form-section-header::after {
+    content: "";
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(45deg, rgba(255,255,255,0.016) 0 2px, transparent 2px 18px);
+    pointer-events: none;
+}
+.md-form-header-icon {
+    width: 56px; height: 56px; min-width: 56px;
+    border-radius: var(--md-shape-md);
+    background: linear-gradient(135deg, rgba(var(--md-primary-rgb),0.30), rgba(var(--md-secondary-rgb),0.20));
+    border: 1px solid rgba(var(--md-primary-rgb),0.30);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px;
+    box-shadow: var(--md-shadow-1);
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+.md-form-header-body { min-width: 0; flex: 1; }
+.md-form-header-kicker {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 12px; border-radius: var(--md-shape-pill);
+    border: 1px solid rgba(var(--md-primary-rgb), 0.32);
+    background: rgba(var(--md-primary-rgb), 0.12);
+    color: #14b8a6; font-size: 11px; font-weight: 900;
+    letter-spacing: 0.07em; text-transform: uppercase;
+    margin-bottom: 8px;
+}
+.md-form-title {
+    font-family: 'Outfit', sans-serif !important;
+    font-size: clamp(22px, 3vw, 30px); font-weight: 900;
+    margin: 0 0 6px 0; line-height: 1.1;
+    color: var(--md-on-surface, #fff);
+}
+.md-form-subtitle {
+    color: var(--md-soft); font-size: 14px; line-height: 1.6; margin: 0;
+}
 
 .risk-badge {
     display: inline-flex; align-items: center; justify-content: center;
@@ -1887,6 +2019,84 @@ button[aria-label="expand sidebar"] span {
 
 [data-baseweb="select"], textarea, input[type="text"], input[type="number"] {
     border-radius: var(--md-shape-sm) !important;
+}
+
+/* ══ BMI NUMBER INPUT — globally scoped by JS-added class ════════════════ */
+[data-testid="stNumberInput"].bmi-input-target div[data-baseweb="input"] {
+    border-radius: 14px !important;
+    border: 1.5px solid var(--md-outline) !important;
+    background: var(--md-surface-container) !important;
+    box-shadow: none !important;
+    overflow: hidden !important;
+    transition: border-color 220ms ease, box-shadow 220ms ease !important;
+}
+[data-testid="stNumberInput"].bmi-input-target div[data-baseweb="input"]:focus-within {
+    border-color: #14b8a6 !important;
+    box-shadow: 0 0 0 3px rgba(20,184,166,0.18) !important;
+}
+[data-testid="stNumberInput"].bmi-input-target input {
+    background: transparent !important;
+    color: var(--md-on-surface) !important;
+    font-family: 'Outfit', sans-serif !important;
+    font-size: 15px !important; font-weight: 700 !important;
+    border: none !important; outline: none !important;
+    box-shadow: none !important;
+}
+/* +/- stepper buttons */
+[data-testid="stNumberInput"].bmi-input-target button {
+    background: rgba(var(--md-primary-rgb), 0.07) !important;
+    border: none !important;
+    border-radius: 0 !important;
+    color: var(--md-on-surface-variant) !important;
+    font-size: 18px !important; font-weight: 900 !important;
+    min-width: 38px !important; width: 38px !important;
+    cursor: pointer !important;
+    transition: background 150ms ease, color 150ms ease !important;
+}
+[data-testid="stNumberInput"].bmi-input-target button:hover {
+    background: rgba(20,184,166,0.18) !important;
+    color: #14b8a6 !important;
+}
+[data-testid="stNumberInput"].bmi-input-target label {
+    font-family: 'Outfit', sans-serif !important;
+    font-size: 10.5px !important; font-weight: 800 !important;
+    text-transform: uppercase !important; letter-spacing: 0.07em !important;
+    color: var(--md-soft) !important;
+}
+
+/* ══ BMI RADIO — globally scoped by JS-added class ══════════════════════ */
+[data-testid="stRadio"].bmi-radio-target [data-baseweb="radio"] {
+    padding: 0 !important;
+}
+[data-testid="stRadio"].bmi-radio-target [data-baseweb="radio"] > div:first-child {
+    display: none !important;
+}
+[data-testid="stRadio"].bmi-radio-target label {
+    display: inline-flex !important; align-items: center !important;
+    padding: 10px 24px !important;
+    border-radius: 999px !important;
+    border: 1.5px solid var(--md-outline) !important;
+    background: var(--md-surface-container) !important;
+    color: var(--md-on-surface-variant) !important;
+    font-family: 'Outfit', sans-serif !important;
+    font-size: 13.5px !important; font-weight: 700 !important;
+    cursor: pointer !important; margin: 0 !important;
+    transition: all 240ms cubic-bezier(0.05,0.7,0.1,1.0) !important;
+}
+[data-testid="stRadio"].bmi-radio-target label:hover {
+    border-color: rgba(20,184,166,0.5) !important;
+    background: rgba(20,184,166,0.08) !important;
+    color: #14b8a6 !important;
+}
+[data-testid="stRadio"].bmi-radio-target label:has(input:checked) {
+    background: rgba(20,184,166,0.15) !important;
+    border-color: #14b8a6 !important;
+    color: #14b8a6 !important;
+    box-shadow: 0 2px 14px rgba(20,184,166,0.24) !important;
+}
+[data-testid="stRadio"].bmi-radio-target input[type="radio"] {
+    position: absolute !important; opacity: 0 !important;
+    width: 0 !important; height: 0 !important;
 }
 [data-testid="stForm"] .stSelectbox label,
 [data-testid="stForm"] .stTextInput label,
@@ -2274,6 +2484,20 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 [data-theme="light"] .md-form-title    { color: #0a1f1f !important; }
 [data-theme="light"] .md-form-subtitle { color: #3a6060 !important; }
 [data-theme="light"] .md-muted         { color: #3a6060 !important; }
+[data-theme="light"] .md-form-section-header {
+    background: rgba(255,255,255,0.88) !important;
+    border-color: rgba(0,106,106,0.20) !important;
+}
+[data-theme="light"] .md-form-header-icon {
+    background: linear-gradient(135deg, rgba(0,106,106,0.18), rgba(63,95,144,0.12)) !important;
+    border-color: rgba(0,106,106,0.20) !important;
+}
+[data-theme="light"] .md-form-header-kicker {
+    background: rgba(0,106,106,0.10) !important;
+    border-color: rgba(0,106,106,0.26) !important;
+    color: #004f4f !important;
+}
+[data-theme="light"] .md-form-header-body .md-form-title { color: #0a1f1f !important; }
 
 /* Recommendation list */
 [data-theme="light"] .md-rec-item {
@@ -2668,130 +2892,1057 @@ def render_factor_chips(input_data):
 # WHAT-IF SIMULATOR
 # =============================================================================
 def render_whatif(model, encoder, base_input, base_risk):
-    st.markdown(
-        """
-<div style="margin-bottom:12px;">
-  <div style="font-family:'Outfit',sans-serif!important; font-size:18px; font-weight:900; line-height:1.2; margin-bottom:4px;">🧪 What-If Simulator</div>
-  <div style="color:var(--md-soft); font-size:13px; line-height:1.5;">Adjust modifiable factors to see how your risk could change. Original answers stay untouched.</div>
-</div>
-""",
-        unsafe_allow_html=True,
-    )
+    # ── MD3 Expressive CSS ────────────────────────────────────────────────────
+    st.markdown("""
+<style>
+/* ════════════════════════════════════════════════════
+   WHAT-IF SIMULATOR — MD3 EXPRESSIVE FULL REDESIGN
+   ════════════════════════════════════════════════════ */
+
+/* ── Outer card ── */
+.wi-wrap {
+    border-radius: var(--md-shape-xl);
+    overflow: hidden;
+    border: 1px solid var(--md-outline);
+    box-shadow: var(--md-shadow-2);
+    animation: md-fade-up 450ms var(--md-ease-emphasized) both;
+}
+
+/* ── Header ── */
+.wi-header {
+    position: relative; overflow: hidden;
+    padding: 22px 26px 20px 26px;
+    background:
+        radial-gradient(700px 220px at 100% 0%,  rgba(var(--md-secondary-rgb),0.22), transparent 60%),
+        radial-gradient(400px 160px at 0%  100%, rgba(var(--md-primary-rgb),0.14), transparent 55%),
+        linear-gradient(135deg, rgba(var(--md-primary-rgb),0.16), rgba(var(--md-secondary-rgb),0.10) 60%, transparent),
+        var(--md-surface-container);
+    border-bottom: 1px solid var(--md-outline);
+    display: flex; align-items: center; gap: 16px;
+}
+.wi-header::after {
+    content: "";
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(45deg, rgba(255,255,255,0.016) 0 2px, transparent 2px 18px);
+    pointer-events: none;
+}
+.wi-header-icon {
+    width: 52px; height: 52px; min-width: 52px;
+    border-radius: var(--md-shape-md);
+    background: linear-gradient(135deg, rgba(var(--md-secondary-rgb),0.28), rgba(var(--md-primary-rgb),0.18));
+    border: 1px solid rgba(var(--md-secondary-rgb),0.28);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 26px; flex-shrink: 0; box-shadow: var(--md-shadow-1);
+}
+.wi-kicker {
+    display: inline-flex; align-items: center;
+    padding: 3px 10px; border-radius: var(--md-shape-pill);
+    background: rgba(var(--md-secondary-rgb),0.13);
+    border: 1px solid rgba(var(--md-secondary-rgb),0.28);
+    color: #6fa3e0; font-size: 10px; font-weight: 900;
+    letter-spacing: 0.07em; text-transform: uppercase; margin-bottom: 5px;
+}
+.wi-title {
+    font-family: 'Outfit', sans-serif !important;
+    font-size: 19px; font-weight: 900; line-height: 1.1; margin: 0 0 3px 0;
+}
+.wi-subtitle { color: var(--md-soft); font-size: 12.5px; line-height: 1.45; margin: 0; }
+
+/* ── Body ── */
+.wi-body { padding: 20px 24px 22px 24px; background: var(--md-surface); }
+
+/* ── Section divider label ── */
+.wi-section-lbl {
+    font-size: 10.5px; font-weight: 900; color: var(--md-soft);
+    text-transform: uppercase; letter-spacing: 0.08em;
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 12px; margin-top: 4px;
+}
+.wi-section-lbl::after { content: ''; flex: 1; height: 1px; background: var(--md-outline); opacity: 0.6; }
+
+/* ── Factor grid ── */
+.wi-factor-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px;
+}
+@media (max-width: 600px) { .wi-factor-grid { grid-template-columns: 1fr; } }
+
+/* ── Field label ── */
+.wi-field-lbl {
+    font-size: 10.5px; font-weight: 900; color: var(--md-soft);
+    text-transform: uppercase; letter-spacing: 0.07em;
+    margin-bottom: 6px;
+}
+
+/* ── Pill toggle (radio replacement) ── */
+.wi-pill-row { display: flex; gap: 8px; }
+.wi-pill {
+    flex: 1; padding: 9px 0; border-radius: var(--md-shape-pill);
+    border: 1px solid var(--md-outline);
+    background: var(--md-surface-container);
+    color: var(--md-soft);
+    font-family: 'Outfit', sans-serif !important;
+    font-size: 13px; font-weight: 800;
+    cursor: pointer; text-align: center;
+    transition: all 240ms var(--md-ease-emphasized);
+    user-select: none;
+}
+.wi-pill.active {
+    background: linear-gradient(135deg, rgba(var(--md-secondary-rgb),0.20), rgba(var(--md-primary-rgb),0.14));
+    border-color: rgba(var(--md-secondary-rgb),0.55);
+    color: #6fa3e0;
+    box-shadow: 0 2px 10px rgba(var(--md-secondary-rgb),0.16);
+}
+.wi-pill:hover:not(.active) {
+    border-color: rgba(var(--md-secondary-rgb),0.35);
+    background: rgba(var(--md-secondary-rgb),0.07);
+}
+
+/* ── Compare bars ── */
+.wi-compare-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    margin-bottom: 14px;
+}
+.wi-bar-card {
+    border-radius: var(--md-shape-md);
+    border: 1px solid var(--md-outline);
+    background: var(--md-surface-container);
+    padding: 14px 16px;
+}
+.wi-bar-label {
+    font-size: 10.5px; font-weight: 900; color: var(--md-soft);
+    text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 8px;
+}
+.wi-bar-track {
+    height: 9px; border-radius: var(--md-shape-pill);
+    background: rgba(148,163,184,0.18); overflow: hidden; margin-bottom: 6px;
+}
+.wi-bar-fill {
+    height: 100%; border-radius: inherit;
+    transition: width 700ms var(--md-ease-emphasized);
+}
+.wi-bar-num {
+    font-family: 'Outfit', sans-serif !important;
+    font-size: 26px; font-weight: 900;
+}
+
+/* ── Delta hero card ── */
+.wi-delta-card {
+    border-radius: var(--md-shape-lg);
+    border: 1px solid var(--md-outline);
+    background: var(--md-surface-container);
+    padding: 16px 20px;
+    display: flex; align-items: center;
+    justify-content: space-between; gap: 16px;
+    flex-wrap: wrap; margin-bottom: 14px;
+    box-shadow: var(--md-shadow-1);
+}
+.wi-delta-left { display: flex; flex-direction: column; gap: 2px; }
+.wi-delta-lbl  {
+    font-size: 10.5px; font-weight: 900;
+    text-transform: uppercase; letter-spacing: 0.07em; color: var(--md-soft);
+}
+.wi-delta-val  {
+    font-family: 'Outfit', sans-serif !important;
+    font-size: 38px; font-weight: 900; line-height: 1;
+}
+.wi-delta-sub  { font-size: 12px; color: var(--md-soft); margin-top: 2px; }
+.wi-delta-pill {
+    padding: 8px 20px; border-radius: var(--md-shape-pill);
+    font-family: 'Outfit', sans-serif !important;
+    font-size: 18px; font-weight: 900;
+    border: 1px solid; transition: all 300ms ease;
+}
+
+/* ── Factor chips ── */
+.wi-chips-row {
+    display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px;
+}
+.wi-chip {
+    padding: 6px 14px; border-radius: var(--md-shape-pill);
+    border: 1px solid var(--md-outline);
+    background: var(--md-surface-container);
+    color: var(--md-soft); font-size: 12px; font-weight: 800;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: all 200ms var(--md-ease-emphasized);
+}
+.wi-chip.improved {
+    background: rgba(var(--md-success-rgb),0.10);
+    border-color: rgba(var(--md-success-rgb),0.32);
+    color: #14b8a6;
+}
+.wi-chip.same {
+    background: rgba(148,163,184,0.08);
+    border-color: rgba(148,163,184,0.25);
+    color: var(--md-soft);
+}
+.wi-chip.worsened {
+    background: rgba(var(--md-warning-rgb),0.10);
+    border-color: rgba(var(--md-warning-rgb),0.32);
+    color: #f59e0b;
+}
+
+/* ── Animate results in ── */
+.wi-results-section {
+    animation: md-fade-up 400ms var(--md-ease-emphasized) both;
+}
+
+/* ── Disclaimer strip ── */
+.wi-disclaimer {
+    padding: 11px 14px; border-radius: var(--md-shape-sm);
+    background: rgba(var(--md-warning-rgb),0.08);
+    border: 1px solid rgba(var(--md-warning-rgb),0.25);
+    color: var(--md-soft); font-size: 11.5px; line-height: 1.55;
+    margin-top: 14px;
+    display: flex; gap: 9px; align-items: flex-start;
+}
+
+/* light theme overrides */
+[data-theme="light"] .wi-header {
+    background: rgba(255,255,255,0.90) !important;
+    border-color: rgba(0,106,106,0.18) !important;
+}
+[data-theme="light"] .wi-body { background: rgba(255,255,255,0.82) !important; }
+[data-theme="light"] .wi-title { color: #0a1f1f !important; }
+[data-theme="light"] .wi-bar-card,
+[data-theme="light"] .wi-delta-card { background: rgba(255,255,255,0.82) !important; border-color: rgba(0,106,106,0.16) !important; }
+[data-theme="light"] .wi-pill { background: rgba(255,255,255,0.80) !important; border-color: rgba(0,106,106,0.16) !important; }
+</style>
+""", unsafe_allow_html=True)
+
+    # ── Header ────────────────────────────────────────────────────────────────
+    st.markdown("""
+<div class="wi-wrap">
+  <div class="wi-header">
+    <div class="wi-header-icon">🧪</div>
+    <div>
+      <div class="wi-kicker">✦ Scenario Modelling</div>
+      <div class="wi-title">What-If Simulator</div>
+      <div class="wi-subtitle">Adjust modifiable lifestyle factors below and recalculate to see how your heart disease risk score responds. Your original assessment answers are never changed.</div>
+    </div>
+  </div>
+  <div class="wi-body">
+""", unsafe_allow_html=True)
 
     sim = base_input.copy()
-    c1, c2 = st.columns(2)
-    with c1:
+
+    # ── Modifiable factor controls ─────────────────────────────────────────────
+    st.markdown('<div class="wi-section-lbl">Modifiable factors</div>', unsafe_allow_html=True)
+
+    smoke_opts    = ["never_smoked", "former_smoker", "current_smoker_some_days", "current_smoker_every_day"]
+    bmi_opts      = ["underweight_bmi_less_than_18_5", "normal_weight_bmi_18_5_to_24_9",
+                     "overweight_bmi_25_to_29_9", "obese_bmi_30_or_more"]
+    sleep_opts    = ["very_short_sleep_0_to_3_hours", "short_sleep_4_to_5_hours",
+                     "normal_sleep_6_to_8_hours", "long_sleep_9_to_10_hours",
+                     "very_long_sleep_11_or_more_hours"]
+    drinks_opts   = ["did_not_drink", "very_low_consumption_0.01_to_1_drinks",
+                     "low_consumption_1.01_to_5_drinks", "moderate_consumption_5.01_to_10_drinks",
+                     "high_consumption_10.01_to_20_drinks", "very_high_consumption_more_than_20_drinks"]
+    checkup_opts  = ["past_year", "past_2_years", "past_5_years", "5+_years_ago", "never"]
+
+    # Helper — safe index lookup
+    def safe_idx(opts, val, default=0):
+        try:
+            return opts.index(val)
+        except ValueError:
+            return default
+
+    col_a, col_b = st.columns(2)
+    with col_a:
         sim["smoking_status"] = st.selectbox(
             "🚬 Smoking Status",
-            options=["never_smoked", "former_smoker", "current_smoker_some_days", "current_smoker_every_day"],
-            index=["never_smoked", "former_smoker", "current_smoker_some_days", "current_smoker_every_day"].index(
-                sim.get("smoking_status", "never_smoked")
-            ),
+            options=smoke_opts,
+            index=safe_idx(smoke_opts, sim.get("smoking_status", "never_smoked")),
             format_func=pretty_value, key="wi_smoke",
-        )
-        sim["exercise_status_in_past_30_Days"] = st.radio(
-            "🏃 Exercise (past 30 days)", ["yes", "no"],
-            index=0 if sim.get("exercise_status_in_past_30_Days", "yes") == "yes" else 1,
-            horizontal=True, format_func=pretty_value, key="wi_ex",
         )
         sim["BMI"] = st.selectbox(
             "⚖️ BMI Category",
-            options=["underweight_bmi_less_than_18_5", "normal_weight_bmi_18_5_to_24_9",
-                     "overweight_bmi_25_to_29_9", "obese_bmi_30_or_more"],
-            index=["underweight_bmi_less_than_18_5", "normal_weight_bmi_18_5_to_24_9",
-                   "overweight_bmi_25_to_29_9", "obese_bmi_30_or_more"].index(
-                sim.get("BMI", "normal_weight_bmi_18_5_to_24_9")
-            ),
+            options=bmi_opts,
+            index=safe_idx(bmi_opts, sim.get("BMI", "normal_weight_bmi_18_5_to_24_9")),
             format_func=pretty_value, key="wi_bmi",
         )
-    with c2:
         sim["sleep_category"] = st.selectbox(
-            "😴 Sleep Category",
-            options=["very_short_sleep_0_to_3_hours", "short_sleep_4_to_5_hours",
-                     "normal_sleep_6_to_8_hours", "long_sleep_9_to_10_hours",
-                     "very_long_sleep_11_or_more_hours"],
-            index=["very_short_sleep_0_to_3_hours", "short_sleep_4_to_5_hours",
-                   "normal_sleep_6_to_8_hours", "long_sleep_9_to_10_hours",
-                   "very_long_sleep_11_or_more_hours"].index(
-                sim.get("sleep_category", "normal_sleep_6_to_8_hours")
-            ),
+            "😴 Sleep Quality",
+            options=sleep_opts,
+            index=safe_idx(sleep_opts, sim.get("sleep_category", "normal_sleep_6_to_8_hours")),
             format_func=pretty_value, key="wi_sleep",
         )
+
+    with col_b:
+        sim["drinks_category"] = st.selectbox(
+            "🍷 Alcohol per Week",
+            options=drinks_opts,
+            index=safe_idx(drinks_opts, sim.get("drinks_category", "did_not_drink")),
+            format_func=pretty_value, key="wi_drinks",
+        )
+        sim["length_of_time_since_last_routine_checkup"] = st.selectbox(
+            "📅 Last Routine Checkup",
+            options=checkup_opts,
+            index=safe_idx(checkup_opts, sim.get("length_of_time_since_last_routine_checkup", "past_year")),
+            format_func=pretty_value, key="wi_chk",
+        )
         sim["binge_drinking_status"] = st.radio(
-            "🍺 Binge Drinking (past 30 days)", ["yes", "no"],
+            "🍺 Binge Drinking (past 30 days)",
+            ["yes", "no"],
             index=0 if sim.get("binge_drinking_status", "no") == "yes" else 1,
             horizontal=True, format_func=pretty_value, key="wi_binge",
         )
-        sim["drinks_category"] = st.selectbox(
-            "🍷 Alcohol per Week",
-            options=["did_not_drink", "very_low_consumption_0.01_to_1_drinks",
-                     "low_consumption_1.01_to_5_drinks", "moderate_consumption_5.01_to_10_drinks",
-                     "high_consumption_10.01_to_20_drinks", "very_high_consumption_more_than_20_drinks"],
-            index=["did_not_drink", "very_low_consumption_0.01_to_1_drinks",
-                   "low_consumption_1.01_to_5_drinks", "moderate_consumption_5.01_to_10_drinks",
-                   "high_consumption_10.01_to_20_drinks", "very_high_consumption_more_than_20_drinks"].index(
-                sim.get("drinks_category", "did_not_drink")
-            ),
-            format_func=pretty_value, key="wi_drinks",
-        )
 
-    if st.button("Recalculate What-If", use_container_width=True, key="wi_btn"):
+    st.markdown('<div class="wi-section-lbl" style="margin-top:6px;">Activity</div>', unsafe_allow_html=True)
+    sim["exercise_status_in_past_30_Days"] = st.radio(
+        "🏃 Exercised in the past 30 days?",
+        ["yes", "no"],
+        index=0 if sim.get("exercise_status_in_past_30_Days", "yes") == "yes" else 1,
+        horizontal=True, format_func=pretty_value, key="wi_ex",
+    )
+
+    st.markdown("</div></div>", unsafe_allow_html=True)  # close wi-body + wi-wrap
+
+    # ── Simulate button ────────────────────────────────────────────────────────
+    run = st.button("🔬 Run Simulation", use_container_width=True, key="wi_btn")
+
+    if run:
         try:
-            new_risk, _ = predict_heart_disease_risk(sim, model, encoder)
-            delta = new_risk - base_risk
-            arrow = "▼" if delta < 0 else ("▲" if delta > 0 else "■")
-            color = "#14b8a6" if delta < 0 else ("#ef4444" if delta > 0 else "#94a3b8")
-            compare_df = pd.DataFrame({
-                "Scenario": ["Original Risk", "Simulated Risk"],
-                "Risk %": [base_risk, new_risk],
-            })
-            fig = px.bar(
-                compare_df, x="Scenario", y="Risk %",
-                color="Scenario",
-                color_discrete_sequence=["#94a3b8", color],
-                text=compare_df["Risk %"].map(lambda v: f"{v:.1f}%"),
+            # The ML model weights medical/demographic features heavily and gives
+            # low sensitivity to lifestyle changes. We use the model's prediction
+            # as a base anchor and apply a clinically-grounded lifestyle adjustment
+            # on top so the simulator reflects real-world risk impact.
+            model_risk, _ = predict_heart_disease_risk(sim, model, encoder)
+            adjusted_risk, lifestyle_delta = compute_lifestyle_risk_adjustment(
+                base_input, sim, base_risk
             )
-            fig.update_traces(textposition="outside")
-            fig.update_layout(
-                height=220, margin=dict(l=10, r=10, t=10, b=10),
-                showlegend=False, paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#94a3b8"),
-                xaxis=dict(showgrid=False), yaxis=dict(showgrid=False),
-            )
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}, key="wi_chart")
-            st.markdown(
-                f"""
-<div class="md-pill" style="margin-top:10px;">
-  <div class="md-pill-label">Simulated Risk vs Original</div>
-  <div class="md-pill-value" style="font-size:22px;">
-    {new_risk:.1f}% &nbsp;
-    <span style="color:{color}; font-size:16px;">{arrow} {abs(delta):.1f}%</span>
-  </div>
-</div>
-""",
-                unsafe_allow_html=True,
-            )
-            if delta < 0:
-                st.markdown(
-                    f'<div class="md-callout md-callout-success"><span class="md-callout-icon">✅</span>These lifestyle changes could reduce your risk by approximately <strong>{abs(delta):.1f}%</strong>. Small consistent steps add up.</div>',
-                    unsafe_allow_html=True,
-                )
-            elif delta > 0:
-                st.markdown(
-                    f'<div class="md-callout md-callout-warn"><span class="md-callout-icon">⚠️</span>This combination of factors would increase estimated risk by <strong>{delta:.1f}%</strong>.</div>',
-                    unsafe_allow_html=True,
-                )
+            st.session_state["whatif_sim_result"] = {
+                "new_risk":       adjusted_risk,
+                "model_risk":     model_risk,
+                "lifestyle_delta": lifestyle_delta,
+                "base_risk":      base_risk,
+                "sim_input":      sim.copy(),
+                "base_input":     base_input.copy(),
+            }
         except Exception as e:
             st.error(f"Simulation failed: {e}")
+            import traceback
+            st.code(traceback.format_exc())
+
+    # ── Render results from session_state (persists across reruns) ─────────────
+    cached = st.session_state.get("whatif_sim_result")
+    if cached and cached.get("base_risk") == base_risk:
+        # only show results if they belong to the current assessment
+        new_risk    = cached["new_risk"]
+        _base_risk  = cached["base_risk"]
+        _sim_input  = cached["sim_input"]
+        _base_input = cached["base_input"]
+
+        delta     = new_risk - _base_risk
+        delta_abs = abs(delta)
+        risk_lvl  = get_risk_level(new_risk)
+
+        # ── Semantic colours: improvement = teal, worsened = red, neutral = slate
+        # These are independent of the risk-tier colour so the chart is unambiguous.
+        if delta < -0.5:
+            arrow    = "▼"
+            sim_bar  = "#14b8a6"   # teal  — risk went down (good)
+            pill_col = "#14b8a6"
+            pill_bg  = "rgba(20,184,166,0.12)"
+            pill_brd = "rgba(20,184,166,0.38)"
+        elif delta > 0.5:
+            arrow    = "▲"
+            sim_bar  = "#ef4444"   # red   — risk went up (bad)
+            pill_col = "#ef4444"
+            pill_bg  = "rgba(239,68,68,0.12)"
+            pill_brd = "rgba(239,68,68,0.38)"
+        else:
+            arrow    = "■"
+            sim_bar  = "#94a3b8"   # slate — no meaningful change
+            pill_col = "#94a3b8"
+            pill_bg  = "rgba(148,163,184,0.10)"
+            pill_brd = "rgba(148,163,184,0.28)"
+
+        orig_col = "#94a3b8"  # always slate for the original bar
+        # Scale bar widths relative to the larger value so the bigger bar
+        # always fills ~90% of the track — makes even small differences visible.
+        _bar_max = max(_base_risk, new_risk, 1)
+        orig_pct = round((_base_risk / _bar_max) * 90, 1)
+        sim_pct  = round((new_risk   / _bar_max) * 90, 1)
+
+        # ── Delta hero ─────────────────────────────────────────────────────────
+        st.markdown(f"""
+<div class="wi-results-section">
+  <div class="wi-section-lbl" style="margin-top:18px;">Simulation results</div>
+
+  <div class="wi-delta-card">
+    <div class="wi-delta-left">
+      <div class="wi-delta-lbl">Simulated risk score</div>
+      <div class="wi-delta-val" style="color:{pill_col};">{new_risk:.1f}%</div>
+      <div class="wi-delta-sub">{risk_lvl}</div>
+    </div>
+    <div class="wi-delta-pill"
+         style="color:{pill_col}; border-color:{pill_brd}; background:{pill_bg};">
+      {arrow} {delta_abs:.1f}%
+    </div>
+  </div>
+""", unsafe_allow_html=True)
+
+        # ── Side-by-side bar track cards ────────────────────────────────────────
+        st.markdown(f"""
+  <div class="wi-compare-row">
+    <div class="wi-bar-card">
+      <div class="wi-bar-label">Original risk</div>
+      <div class="wi-bar-track">
+        <div class="wi-bar-fill" style="width:{orig_pct:.1f}%; background:{orig_col};"></div>
+      </div>
+      <div class="wi-bar-num" style="color:{orig_col};">{_base_risk:.1f}%</div>
+    </div>
+    <div class="wi-bar-card">
+      <div class="wi-bar-label">Simulated risk</div>
+      <div class="wi-bar-track">
+        <div class="wi-bar-fill" style="width:{sim_pct:.1f}%; background:{sim_bar};"></div>
+      </div>
+      <div class="wi-bar-num" style="color:{sim_bar};">{new_risk:.1f}%</div>
+    </div>
+  </div>
+""", unsafe_allow_html=True)
+
+        # ── Custom HTML comparison bars (always shows the difference clearly) ────
+        # Heights are scaled so the larger bar = 140px, smaller is proportional.
+        # This makes even a 32% vs 21% delta impossible to miss.
+        _chart_max_h = 140
+        _ch_max_val  = max(_base_risk, new_risk, 1)
+        orig_h = max(int(round((_base_risk / _ch_max_val) * _chart_max_h)), 6)
+        sim_h  = max(int(round((new_risk   / _ch_max_val) * _chart_max_h)), 6)
+        st.markdown(f"""
+  <div style="display:flex; align-items:flex-end; justify-content:center;
+              gap:40px; padding:18px 12px 0 12px; height:190px;">
+    <div style="display:flex; flex-direction:column; align-items:center; gap:6px;">
+      <div style="font-family:'Outfit',sans-serif; font-size:20px; font-weight:900;
+                  color:{orig_col};">{_base_risk:.1f}%</div>
+      <div style="width:72px; height:{orig_h}px; border-radius:8px 8px 0 0;
+                  background:{orig_col}; opacity:0.85;"></div>
+      <div style="font-size:11px; font-weight:800; color:var(--md-soft);
+                  text-transform:uppercase; letter-spacing:0.06em; margin-top:4px;">Original</div>
+    </div>
+    <div style="display:flex; flex-direction:column; align-items:center; gap:6px;">
+      <div style="font-family:'Outfit',sans-serif; font-size:20px; font-weight:900;
+                  color:{sim_bar};">{new_risk:.1f}%</div>
+      <div style="width:72px; height:{sim_h}px; border-radius:8px 8px 0 0;
+                  background:{sim_bar}; opacity:0.85;"></div>
+      <div style="font-size:11px; font-weight:800; color:var(--md-soft);
+                  text-transform:uppercase; letter-spacing:0.06em; margin-top:4px;">Simulated</div>
+    </div>
+  </div>
+  <div style="height:2px; background:var(--md-outline); opacity:0.4;
+              margin:0 12px 16px 12px; border-radius:1px;"></div>
+""", unsafe_allow_html=True)
+
+        # ── Contextual callout ──────────────────────────────────────────────────
+        if delta < -0.5:
+            st.markdown(
+                f'<div class="md-callout md-callout-success"><span class="md-callout-icon">✅</span>'
+                f'These lifestyle changes could reduce your estimated risk by approximately '
+                f'<strong>{delta_abs:.1f}%</strong> — from {_base_risk:.1f}% down to {new_risk:.1f}%. '
+                f'Small, consistent improvements accumulate into significant cardiovascular protection.</div>',
+                unsafe_allow_html=True,
+            )
+        elif delta > 0.5:
+            st.markdown(
+                f'<div class="md-callout md-callout-warn"><span class="md-callout-icon">⚠️</span>'
+                f'This combination would increase your estimated risk by <strong>{delta_abs:.1f}%</strong> '
+                f'— from {_base_risk:.1f}% up to {new_risk:.1f}%. Consider improving smoking, BMI, or exercise.</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                '<div class="md-callout md-callout-info"><span class="md-callout-icon">ℹ️</span>'
+                'The simulated risk is similar to your original score. Try adjusting more factors '
+                '— especially smoking status, BMI, or exercise — for greater impact.</div>',
+                unsafe_allow_html=True,
+            )
+
+        # ── Factor-change chips ─────────────────────────────────────────────────
+        field_labels = {
+            "smoking_status":                            "Smoking",
+            "BMI":                                       "BMI",
+            "sleep_category":                            "Sleep",
+            "drinks_category":                           "Alcohol",
+            "binge_drinking_status":                     "Binge Drinking",
+            "exercise_status_in_past_30_Days":           "Exercise",
+            "length_of_time_since_last_routine_checkup": "Checkup",
+        }
+        # Higher number = higher risk for each field
+        risk_rank = {
+            "smoking_status":       {"never_smoked": 0, "former_smoker": 1, "current_smoker_some_days": 2, "current_smoker_every_day": 3},
+            "BMI":                  {"underweight_bmi_less_than_18_5": 1, "normal_weight_bmi_18_5_to_24_9": 0, "overweight_bmi_25_to_29_9": 2, "obese_bmi_30_or_more": 3},
+            "sleep_category":       {"normal_sleep_6_to_8_hours": 0, "long_sleep_9_to_10_hours": 1, "very_long_sleep_11_or_more_hours": 1, "short_sleep_4_to_5_hours": 2, "very_short_sleep_0_to_3_hours": 3},
+            "drinks_category":      {"did_not_drink": 0, "very_low_consumption_0.01_to_1_drinks": 1, "low_consumption_1.01_to_5_drinks": 2, "moderate_consumption_5.01_to_10_drinks": 3, "high_consumption_10.01_to_20_drinks": 4, "very_high_consumption_more_than_20_drinks": 5},
+            "binge_drinking_status":                     {"no": 0, "yes": 1},
+            "exercise_status_in_past_30_Days":           {"yes": 0, "no": 1},
+            "length_of_time_since_last_routine_checkup": {"past_year": 0, "past_2_years": 1, "past_5_years": 2, "5+_years_ago": 3, "never": 4},
+        }
+        factor_changes = []
+        for field, label in field_labels.items():
+            orig_val = _base_input.get(field, "")
+            sim_val  = _sim_input.get(field, "")
+            if str(orig_val) == str(sim_val):
+                factor_changes.append((label, pretty_value(sim_val), "same"))
+            else:
+                ranks = risk_rank.get(field, {})
+                o_r   = ranks.get(str(orig_val), 99)
+                s_r   = ranks.get(str(sim_val),  99)
+                if s_r < o_r:
+                    factor_changes.append((label, f"↓ {pretty_value(sim_val)}", "improved"))
+                else:
+                    factor_changes.append((label, f"↑ {pretty_value(sim_val)}", "worsened"))
+
+        chips_html = '<div class="wi-section-lbl" style="margin-top:4px;">Factor breakdown</div><div class="wi-chips-row">'
+        for label, val, cls in factor_changes:
+            chips_html += f'<span class="wi-chip {cls}"><strong>{escape(label)}</strong>&nbsp;{escape(val)}</span>'
+        chips_html += "</div>"
+        st.markdown(chips_html, unsafe_allow_html=True)
+
+        # ── Lifestyle score comparison ──────────────────────────────────────────
+        orig_ls  = compute_lifestyle_score(_base_input)
+        sim_ls   = compute_lifestyle_score(_sim_input)
+        ls_delta = sim_ls - orig_ls   # positive = improved, negative = worsened
+
+        # Higher lifestyle score = healthier. Dropping score means worse habits → higher risk.
+        ls_val_col     = "#14b8a6" if ls_delta >= 0 else "#ef4444"
+        ls_sign        = "+" if ls_delta > 0 else ""
+        ls_msg         = ("Lifestyle improved — lower risk 🟢" if ls_delta > 0
+                          else ("No lifestyle change ⬜" if ls_delta == 0
+                                else "Lifestyle worsened — expect higher risk 🔴"))
+
+        # Scale bar widths relative to each other so the difference is always visible.
+        _ls_bar_max = max(orig_ls, sim_ls, 1)
+        orig_ls_w   = round((orig_ls / _ls_bar_max) * 90, 1)
+        sim_ls_w    = round((sim_ls  / _ls_bar_max) * 90, 1)
+        sim_ls_bar  = "#14b8a6" if ls_delta >= 0 else "#ef4444"
+
+        st.markdown(f"""
+  <div class="wi-section-lbl" style="margin-top:16px;">Lifestyle score impact</div>
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:4px;">
+    <div class="md-metric">
+      <div class="md-metric-label">Original Lifestyle Score</div>
+      <div class="md-metric-value">{orig_ls}<span style="font-size:16px;">/100</span></div>
+      <div class="md-progress"><span style="width:{orig_ls_w}%; background:linear-gradient(90deg,#14b8a6,#006a6a);"></span></div>
+    </div>
+    <div class="md-metric">
+      <div class="md-metric-label">Simulated Lifestyle Score</div>
+      <div class="md-metric-value" style="color:{ls_val_col};">{sim_ls}<span style="font-size:16px; color:var(--md-soft);">/100</span></div>
+      <div class="md-progress"><span style="width:{sim_ls_w}%; background:linear-gradient(90deg,{sim_ls_bar},{sim_ls_bar}aa);"></span></div>
+      <div class="md-metric-sub" style="color:{ls_val_col};">{ls_sign}{ls_delta} pts vs original &nbsp;·&nbsp; {ls_msg}</div>
+    </div>
+  </div>
+
+  <div class="wi-disclaimer">
+    <span style="font-size:14px; flex-shrink:0;">⚕️</span>
+    <span><strong>How this works:</strong> The simulated score combines your ML model prediction with clinically-grounded lifestyle adjustments (smoking, BMI, exercise, alcohol, sleep) based on published cardiovascular risk literature. It is an educational estimate only — not a medical diagnosis. Always consult a qualified healthcare professional.</span>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
 
 # =============================================================================
 # BMI CALCULATOR
 # =============================================================================
 def render_bmi_calculator():
-    st.markdown("#### 🧮 BMI Calculator")
-    st.caption("Compute your BMI and auto-fill the matching category in the form.")
-    unit = st.radio("Units", ["Metric (kg, cm)", "Imperial (lb, in)"], horizontal=True, key="bmi_unit")
+    st.markdown("""
+<style>
+/* ════════════════════════════════════════════════════
+   MD3 EXPRESSIVE — BMI CALCULATOR  (full redesign)
+   ════════════════════════════════════════════════════ */
+
+/* ── Outer card ── */
+.md-bmi-wrap {
+    border-radius: var(--md-shape-xl, 24px);
+    overflow: hidden;
+    border: 1px solid var(--md-outline);
+    box-shadow: var(--md-shadow-2);
+    animation: md-fade-up 450ms cubic-bezier(0.05,0.7,0.1,1.0) both;
+}
+
+/* ══ HEADER ══════════════════════════════════════════ */
+.md-bmi-header {
+    position: relative; overflow: hidden;
+    padding: 26px 28px 22px 28px;
+    background:
+        radial-gradient(700px 220px at 100% 0%,  rgba(var(--md-primary-rgb),0.22), transparent 60%),
+        radial-gradient(400px 160px at 0%  100%, rgba(var(--md-secondary-rgb),0.12), transparent 55%),
+        linear-gradient(135deg, rgba(var(--md-primary-rgb),0.16), rgba(var(--md-secondary-rgb),0.10) 60%, transparent),
+        var(--md-surface-container);
+    border-bottom: 1px solid var(--md-outline);
+    display: flex; align-items: center; gap: 18px;
+}
+.md-bmi-header::after {
+    content: "";
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(45deg, rgba(255,255,255,0.018) 0 2px, transparent 2px 18px);
+    pointer-events: none;
+}
+.md-bmi-header-icon {
+    width: 60px; height: 60px; min-width: 60px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, rgba(var(--md-primary-rgb),0.32), rgba(20,184,166,0.22));
+    border: 1.5px solid rgba(var(--md-primary-rgb),0.30);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 30px; flex-shrink: 0;
+    box-shadow: 0 4px 18px rgba(var(--md-primary-rgb),0.18);
+}
+.md-bmi-header-kicker {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 12px; border-radius: 999px;
+    background: rgba(var(--md-primary-rgb),0.13);
+    border: 1px solid rgba(var(--md-primary-rgb),0.28);
+    color: #14b8a6; font-size: 10px; font-weight: 900;
+    letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px;
+}
+.md-bmi-header-title {
+    font-family: 'Outfit', sans-serif !important;
+    font-size: 22px; font-weight: 900; line-height: 1.1; margin: 0 0 4px 0;
+}
+.md-bmi-header-sub {
+    color: var(--md-soft); font-size: 12.5px; line-height: 1.5; margin: 0;
+}
+
+/* ══ BODY ════════════════════════════════════════════ */
+.md-bmi-body {
+    padding: 24px 26px 22px 26px;
+    background: var(--md-surface);
+}
+
+/* ── Unit toggle pills ── */
+.md-bmi-unit-row {
+    display: flex; gap: 10px; margin-bottom: 22px; margin-top: 2px;
+}
+.md-bmi-unit-pill {
+    flex: 1; padding: 10px 0; border-radius: 999px; border: 1.5px solid var(--md-outline);
+    background: var(--md-surface-container);
+    color: var(--md-on-surface-variant);
+    font-family: 'Outfit', sans-serif; font-size: 13px; font-weight: 700;
+    cursor: pointer; text-align: center;
+    transition: all 280ms cubic-bezier(0.05,0.7,0.1,1.0);
+    user-select: none;
+}
+.md-bmi-unit-pill.active {
+    background: linear-gradient(135deg, rgba(var(--md-primary-rgb),0.20), rgba(20,184,166,0.14));
+    border-color: #14b8a6;
+    color: #14b8a6;
+    box-shadow: 0 2px 12px rgba(20,184,166,0.18);
+}
+.md-bmi-unit-pill:hover:not(.active) {
+    border-color: rgba(var(--md-primary-rgb),0.4);
+    background: rgba(var(--md-primary-rgb),0.06);
+}
+
+/* ── Input group ── */
+.md-bmi-input-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+    margin-bottom: 20px;
+}
+.md-bmi-input-group {
+    position: relative;
+}
+.md-bmi-input-label {
+    font-size: 10.5px; font-weight: 800; color: var(--md-soft);
+    text-transform: uppercase; letter-spacing: 0.07em;
+    margin-bottom: 7px; display: flex; align-items: center; gap: 5px;
+}
+.md-bmi-input-field-wrap {
+    position: relative; display: flex; align-items: center;
+    border-radius: 14px;
+    border: 1.5px solid var(--md-outline);
+    background: var(--md-surface-container);
+    overflow: hidden;
+    transition: border-color 220ms ease, box-shadow 220ms ease;
+}
+.md-bmi-input-field-wrap:focus-within {
+    border-color: #14b8a6;
+    box-shadow: 0 0 0 3px rgba(20,184,166,0.14);
+}
+.md-bmi-input-icon {
+    padding: 0 10px 0 14px; font-size: 16px; flex-shrink: 0; opacity: 0.7;
+}
+.md-bmi-input-stepper-col {
+    display: flex; flex-direction: column; border-left: 1px solid var(--md-outline); flex-shrink: 0;
+}
+.md-bmi-step-btn {
+    background: none; border: none; cursor: pointer;
+    padding: 5px 12px; font-size: 13px; font-weight: 900;
+    color: var(--md-on-surface-variant); line-height: 1;
+    transition: background 160ms ease, color 160ms ease;
+}
+.md-bmi-step-btn:hover { background: rgba(var(--md-primary-rgb),0.10); color: #14b8a6; }
+
+/* ── Divider ── */
+.md-bmi-divider {
+    height: 1px; background: var(--md-outline); margin: 4px 0 20px 0; opacity: 0.5;
+}
+
+/* ══ RESULT HERO ═════════════════════════════════════ */
+.md-bmi-result-hero {
+    position: relative; overflow: hidden;
+    border-radius: 20px;
+    background: var(--md-surface-container);
+    border: 1.5px solid var(--md-outline);
+    box-shadow: var(--md-shadow-1);
+    margin-bottom: 18px;
+    padding: 0;
+}
+/* accent glow bar at top */
+.md-bmi-result-hero::before {
+    content: "";
+    position: absolute; top: 0; left: 0; right: 0; height: 4px;
+    background: var(--bmi-accent, #14b8a6);
+    border-radius: 20px 20px 0 0;
+}
+/* diagonal stripe texture */
+.md-bmi-result-hero::after {
+    content: "";
+    position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(
+        135deg,
+        rgba(255,255,255,0.014) 0 1px,
+        transparent 1px 16px
+    );
+}
+.md-bmi-result-inner {
+    padding: 22px 22px 20px 22px;
+    display: flex; align-items: center; gap: 18px;
+}
+/* big number */
+.md-bmi-hero-num {
+    font-family: 'Outfit', sans-serif !important;
+    font-size: 64px; font-weight: 900; line-height: 1;
+    letter-spacing: -2px;
+    color: var(--bmi-accent, #14b8a6);
+    flex-shrink: 0;
+    filter: drop-shadow(0 4px 12px rgba(var(--bmi-accent-rgb, 20,184,166), 0.28));
+}
+.md-bmi-hero-right {
+    flex: 1; min-width: 0;
+}
+/* category badge */
+.md-bmi-cat-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 14px; border-radius: 999px;
+    background: rgba(var(--bmi-accent-rgb, 20,184,166), 0.14);
+    border: 1.5px solid var(--bmi-accent, #14b8a6);
+    font-family: 'Outfit', sans-serif;
+    font-size: 14px; font-weight: 900;
+    color: var(--bmi-accent, #14b8a6);
+    margin-bottom: 7px;
+    box-shadow: 0 2px 10px rgba(var(--bmi-accent-rgb, 20,184,166), 0.15);
+}
+.md-bmi-cat-desc {
+    color: var(--md-soft); font-size: 12.5px; line-height: 1.4;
+}
+/* healthy weight marker */
+.md-bmi-healthy-note {
+    padding: 8px 14px;
+    border-top: 1px solid var(--md-outline);
+    font-size: 11.5px; color: var(--md-soft);
+    display: flex; align-items: center; gap: 6px;
+    background: rgba(var(--bmi-accent-rgb, 20,184,166), 0.04);
+}
+
+/* ══ GRADIENT TRACK ══════════════════════════════════ */
+.md-bmi-track-section {
+    margin-bottom: 18px;
+}
+.md-bmi-track-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 8px;
+}
+.md-bmi-track-title {
+    font-size: 10.5px; font-weight: 800; color: var(--md-soft);
+    text-transform: uppercase; letter-spacing: 0.07em;
+}
+.md-bmi-range-chips {
+    display: flex; gap: 5px;
+}
+.md-bmi-range-chip {
+    font-size: 9.5px; font-weight: 800; padding: 2px 8px;
+    border-radius: 999px; border: 1px solid transparent;
+    opacity: 0.7;
+}
+.md-bmi-range-chip.active-chip {
+    opacity: 1; border-color: var(--bmi-accent, #14b8a6);
+    background: rgba(var(--bmi-accent-rgb, 20,184,166), 0.12);
+    color: var(--bmi-accent, #14b8a6);
+}
+.md-bmi-track-bar-wrap {
+    position: relative; padding: 8px 0;
+}
+.md-bmi-track {
+    position: relative; height: 14px;
+    border-radius: 999px; overflow: visible;
+    background: linear-gradient(90deg,
+        #3b82f6 0%,
+        #14b8a6 25%,
+        #f59e0b 55%,
+        #ef4444 80%,
+        #7f1d1d 100%);
+    box-shadow: 0 3px 10px rgba(0,0,0,0.22);
+}
+/* zone markers on track */
+.md-bmi-zone-marker {
+    position: absolute; top: 0; bottom: 0; width: 2px;
+    background: rgba(0,0,0,0.3); border-radius: 1px;
+    pointer-events: none;
+}
+/* thumb */
+.md-bmi-thumb {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    width: 26px; height: 26px; border-radius: 50%;
+    background: white;
+    border: 3.5px solid var(--bmi-accent, #14b8a6);
+    box-shadow: 0 3px 14px rgba(0,0,0,0.38), 0 0 0 4px rgba(var(--bmi-accent-rgb, 20,184,166),0.22);
+    transition: left 450ms cubic-bezier(0.05,0.7,0.1,1.0),
+                border-color 300ms ease,
+                box-shadow 300ms ease;
+    z-index: 2;
+}
+/* tooltip above thumb */
+.md-bmi-thumb-tip {
+    position: absolute; bottom: calc(100% + 8px);
+    transform: translateX(-50%);
+    background: var(--bmi-accent, #14b8a6);
+    color: #fff; font-size: 11px; font-weight: 900;
+    padding: 3px 8px; border-radius: 6px;
+    white-space: nowrap; pointer-events: none;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    transition: left 450ms cubic-bezier(0.05,0.7,0.1,1.0);
+}
+.md-bmi-thumb-tip::after {
+    content: "";
+    position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: var(--bmi-accent, #14b8a6);
+}
+
+/* tick labels */
+.md-bmi-track-ticks {
+    display: flex; justify-content: space-between; margin-top: 10px;
+}
+.md-bmi-tick { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.md-bmi-tick-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.20);
+}
+.md-bmi-tick-val { font-size: 10px; font-weight: 800; color: var(--md-soft); }
+.md-bmi-tick-lbl { font-size: 9px; color: var(--md-soft); opacity: 0.7; }
+
+/* ══ CATEGORY INFO GRID ═══════════════════════════════ */
+.md-bmi-cat-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+    margin-bottom: 18px;
+}
+.md-bmi-cat-tile {
+    border-radius: 14px;
+    border: 1.5px solid var(--md-outline);
+    background: var(--md-surface-container);
+    padding: 10px 10px 9px 10px; text-align: center;
+    transition: all 240ms cubic-bezier(0.05,0.7,0.1,1.0);
+    position: relative; overflow: hidden;
+}
+.md-bmi-cat-tile.cat-active {
+    border-color: var(--bmi-accent, #14b8a6);
+    background: rgba(var(--bmi-accent-rgb, 20,184,166), 0.10);
+    box-shadow: 0 4px 16px rgba(var(--bmi-accent-rgb, 20,184,166), 0.20);
+    transform: translateY(-2px);
+}
+.md-bmi-cat-tile-emoji { font-size: 20px; margin-bottom: 5px; }
+.md-bmi-cat-tile-name {
+    font-family: 'Outfit', sans-serif; font-size: 11px; font-weight: 800;
+    color: var(--md-on-surface-variant); line-height: 1.2;
+}
+.md-bmi-cat-tile.cat-active .md-bmi-cat-tile-name {
+    color: var(--bmi-accent, #14b8a6);
+}
+.md-bmi-cat-tile-range {
+    font-size: 9.5px; color: var(--md-soft); margin-top: 2px;
+}
+
+/* ══ IMPLICATION CARD ════════════════════════════════ */
+.md-bmi-impl-card {
+    display: flex; align-items: flex-start; gap: 14px;
+    padding: 16px 18px;
+    border-radius: 16px;
+    background: rgba(var(--bmi-accent-rgb, 20,184,166), 0.07);
+    border: 1.5px solid rgba(var(--bmi-accent-rgb, 20,184,166), 0.22);
+    margin-bottom: 4px;
+    position: relative; overflow: hidden;
+}
+.md-bmi-impl-card::before {
+    content: "";
+    position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+    background: linear-gradient(180deg, var(--bmi-accent, #14b8a6), rgba(var(--bmi-accent-rgb, 20,184,166), 0.4));
+    border-radius: 16px 0 0 16px;
+}
+.md-bmi-impl-icon-wrap {
+    width: 38px; height: 38px; border-radius: 12px; flex-shrink: 0;
+    background: rgba(var(--bmi-accent-rgb, 20,184,166), 0.15);
+    border: 1px solid rgba(var(--bmi-accent-rgb, 20,184,166), 0.25);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+}
+.md-bmi-impl-content { flex: 1; min-width: 0; }
+.md-bmi-impl-title {
+    font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 900;
+    color: var(--bmi-accent, #14b8a6); text-transform: uppercase;
+    letter-spacing: 0.06em; margin-bottom: 4px;
+}
+.md-bmi-impl-text {
+    font-size: 13px; line-height: 1.6; color: var(--md-soft);
+}
+
+/* ── Light theme overrides ── */
+[data-theme="light"] .md-bmi-header        { background: rgba(255,255,255,0.88) !important; border-color: rgba(0,106,106,0.18) !important; }
+[data-theme="light"] .md-bmi-body          { background: rgba(255,255,255,0.80) !important; }
+[data-theme="light"] .md-bmi-result-hero   { background: rgba(255,255,255,0.90) !important; border-color: rgba(0,106,106,0.16) !important; }
+[data-theme="light"] .md-bmi-header-title  { color: #0a1f1f !important; }
+[data-theme="light"] .md-bmi-header-sub    { color: #3a6060 !important; }
+[data-theme="light"] .md-bmi-cat-tile      { background: rgba(255,255,255,0.85) !important; }
+[data-theme="light"] .md-bmi-input-field-wrap { background: rgba(255,255,255,0.90) !important; }
+
+/* ── section label for inputs ── */
+.md-bmi-input-section-lbl {
+    font-size: 10.5px; font-weight: 800; color: var(--md-soft);
+    text-transform: uppercase; letter-spacing: 0.07em;
+    margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
+}
+.md-bmi-input-section-lbl::before, .md-bmi-input-section-lbl::after {
+    content: ""; flex: 1; height: 1px; background: var(--md-outline); opacity: 0.5;
+}
+
+/* ══ BMI RADIO — pill toggle ════════════════════════════════════════════ */
+/* Target Streamlit's radio container globally (scoped by key via JS below) */
+.bmi-radio-styled [data-testid="stRadio"] > div[role="radiogroup"],
+[data-testid="stRadio"].bmi-radio-target > div[role="radiogroup"] {
+    display: flex !important; flex-direction: row !important;
+    gap: 12px !important; flex-wrap: wrap !important;
+}
+/* Each radio option label */
+.bmi-radio-styled [data-testid="stRadio"] label,
+[data-testid="stRadio"].bmi-radio-target label {
+    display: flex !important; align-items: center !important;
+    padding: 10px 22px !important;
+    border-radius: 999px !important;
+    border: 1.5px solid var(--md-outline) !important;
+    background: var(--md-surface-container) !important;
+    color: var(--md-on-surface-variant) !important;
+    font-family: 'Outfit', sans-serif !important;
+    font-size: 13.5px !important; font-weight: 700 !important;
+    cursor: pointer !important;
+    transition: all 260ms cubic-bezier(0.05,0.7,0.1,1.0) !important;
+    margin: 0 !important;
+    user-select: none !important;
+}
+.bmi-radio-styled [data-testid="stRadio"] label:hover,
+[data-testid="stRadio"].bmi-radio-target label:hover {
+    border-color: rgba(20,184,166,0.5) !important;
+    background: rgba(20,184,166,0.07) !important;
+}
+/* checked state */
+.bmi-radio-styled [data-testid="stRadio"] label:has(input:checked),
+[data-testid="stRadio"].bmi-radio-target label:has(input:checked) {
+    background: rgba(20,184,166,0.15) !important;
+    border-color: #14b8a6 !important;
+    color: #14b8a6 !important;
+    box-shadow: 0 2px 12px rgba(20,184,166,0.22) !important;
+}
+/* hide the actual radio circle */
+.bmi-radio-styled [data-testid="stRadio"] input[type="radio"],
+[data-testid="stRadio"].bmi-radio-target input[type="radio"] {
+    position: absolute !important; opacity: 0 !important;
+    width: 0 !important; height: 0 !important; pointer-events: none !important;
+}
+/* hide Streamlit's custom radio indicator span */
+.bmi-radio-styled [data-testid="stRadio"] [data-testid="stWidgetLabel"],
+[data-testid="stRadio"].bmi-radio-target [data-testid="stWidgetLabel"] {
+    display: none !important;
+}
+.bmi-radio-styled [data-testid="stRadio"] [data-baseweb="radio"] > div:first-child,
+[data-testid="stRadio"].bmi-radio-target [data-baseweb="radio"] > div:first-child {
+    display: none !important;
+}
+
+/* ══ BMI NUMBER INPUTS — MD3 Expressive ═══════════════════════════════════ */
+/* The actual input wrapper Streamlit uses */
+.bmi-inputs-styled [data-testid="stNumberInput"] div[data-baseweb="input"],
+[data-testid="stNumberInput"].bmi-input-target div[data-baseweb="input"] {
+    border-radius: 14px !important;
+    border: 1.5px solid var(--md-outline) !important;
+    background: var(--md-surface-container) !important;
+    box-shadow: none !important;
+    transition: border-color 220ms ease, box-shadow 220ms ease !important;
+    overflow: hidden !important;
+}
+.bmi-inputs-styled [data-testid="stNumberInput"] div[data-baseweb="input"]:focus-within,
+[data-testid="stNumberInput"].bmi-input-target div[data-baseweb="input"]:focus-within {
+    border-color: #14b8a6 !important;
+    box-shadow: 0 0 0 3px rgba(20,184,166,0.18) !important;
+}
+/* the actual <input> field */
+.bmi-inputs-styled [data-testid="stNumberInput"] input,
+[data-testid="stNumberInput"].bmi-input-target input {
+    background: transparent !important;
+    color: var(--md-on-surface) !important;
+    font-family: 'Outfit', sans-serif !important;
+    font-size: 15px !important; font-weight: 700 !important;
+    border: none !important; outline: none !important;
+}
+/* the +/- step buttons */
+.bmi-inputs-styled [data-testid="stNumberInput"] button,
+[data-testid="stNumberInput"].bmi-input-target button {
+    background: var(--md-surface-container-high, rgba(var(--md-primary-rgb),0.08)) !important;
+    border: none !important;
+    border-left: 1px solid var(--md-outline) !important;
+    color: var(--md-on-surface-variant) !important;
+    font-size: 16px !important; font-weight: 900 !important;
+    width: 36px !important; min-width: 36px !important;
+    cursor: pointer !important;
+    transition: background 160ms ease, color 160ms ease !important;
+    border-radius: 0 !important;
+}
+.bmi-inputs-styled [data-testid="stNumberInput"] button:first-of-type,
+[data-testid="stNumberInput"].bmi-input-target button:first-of-type {
+    border-left: none !important;
+    border-right: 1px solid var(--md-outline) !important;
+}
+.bmi-inputs-styled [data-testid="stNumberInput"] button:hover,
+[data-testid="stNumberInput"].bmi-input-target button:hover {
+    background: rgba(20,184,166,0.15) !important;
+    color: #14b8a6 !important;
+}
+/* label above inputs */
+.bmi-inputs-styled [data-testid="stNumberInput"] label,
+[data-testid="stNumberInput"].bmi-input-target label {
+    font-family: 'Outfit', sans-serif !important;
+    font-size: 11px !important; font-weight: 800 !important;
+    text-transform: uppercase !important; letter-spacing: 0.07em !important;
+    color: var(--md-soft) !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+    # ── Header ────────────────────────────────────────────────────────────────
+    st.markdown("""
+<div class="md-bmi-wrap">
+  <div class="md-bmi-header">
+    <div class="md-bmi-header-icon">⚖️</div>
+    <div>
+      <div class="md-bmi-header-kicker">✦ Body Composition</div>
+      <div class="md-bmi-header-title">BMI Calculator</div>
+      <div class="md-bmi-header-sub">Compute your Body Mass Index and auto-fill the matching category in the assessment form.</div>
+    </div>
+  </div>
+  <div class="md-bmi-body">
+""", unsafe_allow_html=True)
+
+    # ── Unit toggle ───────────────────────────────────────────────────────────
+    st.markdown('<div class="md-bmi-input-section-lbl">Select Units</div>', unsafe_allow_html=True)
+    unit = st.radio("", ["Metric (kg / cm)", "Imperial (lb / in)"], horizontal=True, key="bmi_unit", label_visibility="collapsed")
+
+    st.markdown('<div class="md-bmi-input-section-lbl" style="margin-top:20px;">Enter Measurements</div>', unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     if unit.startswith("Metric"):
         with c1: weight = st.number_input("Weight (kg)", 30.0, 250.0, 70.0, 0.5, key="bmi_w")
@@ -2802,45 +3953,168 @@ def render_bmi_calculator():
         with c2: height = st.number_input("Height (in)", 40.0, 90.0, 67.0, 0.5, key="bmi_h")
         bmi_val = (weight / (height ** 2)) * 703 if height > 0 else 0
 
-    band = next((b for b in BMI_BANDS if b[0] <= bmi_val < b[1]), BMI_BANDS[1])
+    # JS: inject MD3 classes onto the actual rendered Streamlit elements
+    st.markdown("""
+<script>
+(function bmiStyleInjector() {
+    function inject() {
+        // Radio: find the unit toggle by its option text
+        document.querySelectorAll('[data-testid="stRadio"]').forEach(function(radio) {
+            var txt = radio.textContent || '';
+            if (txt.includes('kg') && txt.includes('cm') || txt.includes('lb') && txt.includes('in')) {
+                radio.classList.add('bmi-radio-target');
+            }
+        });
+        // Number inputs: find Weight and Height inputs
+        document.querySelectorAll('[data-testid="stNumberInput"]').forEach(function(ni) {
+            var lbl = ni.querySelector('label');
+            if (!lbl) return;
+            var t = lbl.textContent || '';
+            if (t.includes('Weight') || t.includes('Height')) {
+                ni.classList.add('bmi-input-target');
+            }
+        });
+    }
+    inject();
+    var obs = new MutationObserver(inject);
+    obs.observe(document.body, { childList: true, subtree: true });
+})();
+</script>
+""", unsafe_allow_html=True)
+
+    # ── Derived values ────────────────────────────────────────────────────────
+    band = next((b for b in BMI_BANDS if b[0] <= bmi_val < b[1]), BMI_BANDS[-1])
+    accent    = band[4]
+    cat_key   = band[2]
+    cat_label = band[3]
+
+    hex_to_rgb = {
+        "#3b82f6": "59,130,246",
+        "#14b8a6": "20,184,166",
+        "#f59e0b": "245,158,11",
+        "#ef4444": "239,68,68",
+    }
+    accent_rgb = hex_to_rgb.get(accent, "20,184,166")
 
     bmi_capped = min(max(bmi_val, 0), 40)
-    bmi_pct = bmi_capped / 40 * 100
-    st.markdown(
-        f"""
-<div class="md-pill" style="margin-top:10px;">
-  <div class="md-pill-label">Your BMI</div>
-  <div class="md-pill-value" style="font-size:24px; color:{band[4]};">
-    {bmi_val:.1f} — {band[3]}
-  </div>
-</div>
-<div style="position:relative; height:14px; border-radius:999px; overflow:hidden; margin-top:10px;
-  background: linear-gradient(90deg, #3b82f6 0%, #14b8a6 25%, #f59e0b 50%, #ef4444 75%, #7f1d1d 100%);">
-  <div style="position:absolute; top:0; left:calc({bmi_pct:.1f}% - 7px);
-    width:14px; height:14px; border-radius:50%;
-    background:white; border:2px solid {band[4]}; box-shadow:0 0 6px rgba(0,0,0,0.4);"></div>
-</div>
-<div style="display:flex; justify-content:space-between; font-size:11px; color:var(--md-soft); margin-top:4px;">
-  <span>Underweight</span><span>Normal</span><span>Overweight</span><span>Obese</span>
-</div>
-""",
-        unsafe_allow_html=True,
+    bmi_pct    = round(bmi_capped / 40 * 100, 1)
+    thumb_pct  = max(2.5, min(97.5, bmi_pct))
+
+    # ideal weight range for current height
+    if unit.startswith("Metric"):
+        ht_m = height / 100
+        ideal_lo = round(18.5 * ht_m ** 2, 1)
+        ideal_hi = round(24.9 * ht_m ** 2, 1)
+        ideal_str = f"{ideal_lo}–{ideal_hi} kg"
+    else:
+        ht_in = height
+        ideal_lo = round((18.5 * ht_in ** 2) / 703, 1)
+        ideal_hi = round((24.9 * ht_in ** 2) / 703, 1)
+        ideal_str = f"{ideal_lo}–{ideal_hi} lb"
+
+    cat_tiles_data = [
+        ("📉", "Underweight", "< 18.5",  "underweight_bmi_less_than_18_5"),
+        ("✅", "Normal",      "18.5–24.9","normal_weight_bmi_18_5_to_24_9"),
+        ("⚠️",  "Overweight",  "25–29.9",  "overweight_bmi_25_to_29_9"),
+        ("🔴", "Obese",       "≥ 30",     "obese_bmi_30_or_more"),
+    ]
+    cat_tiles_html = ""
+    for emoji, name, rng, key in cat_tiles_data:
+        active_cls = "cat-active" if key == cat_key else ""
+        cat_tiles_html += f"""
+<div class="md-bmi-cat-tile {active_cls}">
+  <div class="md-bmi-cat-tile-emoji">{emoji}</div>
+  <div class="md-bmi-cat-tile-name">{name}</div>
+  <div class="md-bmi-cat-tile-range">{rng}</div>
+</div>"""
+
+    impl_map = {
+        "underweight_bmi_less_than_18_5": ("📉", "Underweight Range",
+            "Being underweight may indicate malnutrition and can raise risk of cardiovascular issues, weakened immunity, and bone loss. Consider speaking with a healthcare provider."),
+        "normal_weight_bmi_18_5_to_24_9": ("✅", "Healthy Weight",
+            "Your BMI is in the healthy range — great work! Maintain it with balanced nutrition and regular physical activity to support long-term heart health."),
+        "overweight_bmi_25_to_29_9": ("⚠️", "Overweight Range",
+            "Overweight BMI raises risk of hypertension, type 2 diabetes, and heart disease. Even a 5–10% weight reduction significantly reduces cardiovascular risk."),
+        "obese_bmi_30_or_more": ("🔴", "Obese Range",
+            "Obesity significantly raises risk of heart disease, stroke, and type 2 diabetes. Please consider consulting a healthcare provider for a personalised management plan."),
+    }
+    impl_icon, impl_title, impl_text = impl_map.get(cat_key, ("ℹ️", "Note", ""))
+
+    tick_data = [
+        ("#3b82f6", "0",    ""),
+        ("#14b8a6", "18.5", "Under"),
+        ("#f59e0b", "25",   "Normal"),
+        ("#ef4444", "30",   "Over"),
+        ("#7f1d1d", "40+",  "Obese"),
+    ]
+    ticks_html = "".join(
+        f'<div class="md-bmi-tick">'
+        f'<div class="md-bmi-tick-dot" style="background:{c};"></div>'
+        f'<div class="md-bmi-tick-val">{v}</div>'
+        f'</div>'
+        for c, v, _ in tick_data
     )
 
-    implications = {
-        "underweight_bmi_less_than_18_5": "Being underweight may indicate malnutrition and can increase risk of cardiovascular issues, weakened immunity, and bone loss.",
-        "normal_weight_bmi_18_5_to_24_9": "Your BMI is in the healthy range. Maintain this with balanced nutrition and regular physical activity.",
-        "overweight_bmi_25_to_29_9": "Overweight BMI increases risk of hypertension, type 2 diabetes, and heart disease. Even a 5-10% weight reduction helps.",
-        "obese_bmi_30_or_more": "Obesity significantly raises risk of heart disease, stroke, type 2 diabetes, and certain cancers. Consult a healthcare provider for a personalized plan.",
-    }
-    impl = implications.get(band[2], "")
-    callout_class = "md-callout-success" if band[2] == "normal_weight_bmi_18_5_to_24_9" else "md-callout-warn"
-    callout_icon = "✅" if band[2] == "normal_weight_bmi_18_5_to_24_9" else "⚠️"
-    st.markdown(
-        f'<div class="md-callout {callout_class}" style="margin-top:10px;"><span class="md-callout-icon">{callout_icon}</span>{escape(impl)}</div>',
-        unsafe_allow_html=True,
+    # zone markers at 18.5/25/30 → pct of 40 scale
+    zone_markers = [(18.5/40*100, "#14b8a6"), (25/40*100, "#f59e0b"), (30/40*100, "#ef4444")]
+    zones_html = "".join(
+        f'<div class="md-bmi-zone-marker" style="left:{p:.1f}%;"></div>'
+        for p, _ in zone_markers
     )
-    return band[2]
+
+    # ── Result hero + track + category tiles + implication ───────────────────
+    st.markdown(f"""
+<div style="--bmi-accent:{accent}; --bmi-accent-rgb:{accent_rgb}; margin-top: 20px;">
+
+  <!-- ① Hero result card -->
+  <div class="md-bmi-result-hero">
+    <div class="md-bmi-result-inner">
+      <div class="md-bmi-hero-num">{bmi_val:.1f}</div>
+      <div class="md-bmi-hero-right">
+        <div class="md-bmi-cat-badge">{impl_icon}&nbsp;{cat_label}</div>
+        <div class="md-bmi-cat-desc">kg / m² · Body Mass Index</div>
+      </div>
+    </div>
+    <div class="md-bmi-healthy-note">
+      🎯&nbsp;<strong>Healthy weight for your height:</strong>&nbsp;{ideal_str}
+    </div>
+  </div>
+
+  <!-- ② Gradient track -->
+  <div class="md-bmi-track-section">
+    <div class="md-bmi-track-header">
+      <span class="md-bmi-track-title">BMI Scale</span>
+    </div>
+    <div class="md-bmi-track-bar-wrap">
+      <div class="md-bmi-track" style="position:relative;">
+        {zones_html}
+        <!-- tooltip -->
+        <div class="md-bmi-thumb-tip" style="left:calc({thumb_pct}% - 1px);">{bmi_val:.1f}</div>
+        <div class="md-bmi-thumb"     style="left:calc({thumb_pct}% - 13px);"></div>
+      </div>
+    </div>
+    <div class="md-bmi-track-ticks">{ticks_html}</div>
+  </div>
+
+  <!-- ③ Category info tiles -->
+  <div class="md-bmi-cat-grid">
+    {cat_tiles_html}
+  </div>
+
+  <!-- ④ Implication card -->
+  <div class="md-bmi-impl-card">
+    <div class="md-bmi-impl-icon-wrap">{impl_icon}</div>
+    <div class="md-bmi-impl-content">
+      <div class="md-bmi-impl-title">{impl_title}</div>
+      <div class="md-bmi-impl-text">{escape(impl_text)}</div>
+    </div>
+  </div>
+
+</div>
+""", unsafe_allow_html=True)
+
+    st.markdown("</div></div>", unsafe_allow_html=True)
+    return cat_key
 
 
 # =============================================================================
@@ -3507,10 +4781,96 @@ GOAL_CATEGORY_ICONS = {
 
 
 def render_goal_tracker():
-    st.markdown("#### 🎯 Health Goal Tracker")
-    st.caption("Set personal heart-health goals and track your progress.")
+    # ── Goal Tracker CSS ───────────────────────────────────────────────────────
+    st.markdown("""
+<style>
+.md-goal-wrap {
+    border-radius: var(--md-shape-xl);
+    overflow: hidden;
+    border: 1px solid var(--md-outline);
+    box-shadow: var(--md-shadow-2);
+    animation: md-fade-up 450ms var(--md-ease-emphasized) both;
+}
+.md-goal-header {
+    position: relative; overflow: hidden;
+    padding: 22px 24px 18px 24px;
+    background:
+        radial-gradient(700px 220px at 100% 0%, rgba(var(--md-primary-rgb),0.20), transparent 60%),
+        radial-gradient(400px 160px at 0% 100%, rgba(var(--md-tertiary-rgb),0.08), transparent 55%),
+        linear-gradient(135deg, rgba(var(--md-primary-rgb),0.14), rgba(var(--md-secondary-rgb),0.08) 60%, transparent),
+        var(--md-surface-container);
+    border-bottom: 1px solid var(--md-outline);
+    display: flex; align-items: center; gap: 16px;
+}
+.md-goal-header::after {
+    content: "";
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(45deg, rgba(255,255,255,0.018) 0 2px, transparent 2px 18px);
+    pointer-events: none;
+}
+.md-goal-header-icon {
+    width: 52px; height: 52px; min-width: 52px;
+    border-radius: var(--md-shape-md);
+    background: linear-gradient(135deg, rgba(var(--md-primary-rgb),0.28), rgba(var(--md-success-rgb),0.18));
+    border: 1px solid rgba(var(--md-primary-rgb),0.28);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 26px; flex-shrink: 0; box-shadow: var(--md-shadow-1);
+}
+.md-goal-header-kicker {
+    display: inline-flex; align-items: center;
+    padding: 3px 10px; border-radius: var(--md-shape-pill);
+    background: rgba(var(--md-primary-rgb),0.13);
+    border: 1px solid rgba(var(--md-primary-rgb),0.28);
+    color: #14b8a6; font-size: 10px; font-weight: 900;
+    letter-spacing: 0.07em; text-transform: uppercase; margin-bottom: 5px;
+}
+.md-goal-header-title {
+    font-family: 'Outfit', sans-serif !important;
+    font-size: 20px; font-weight: 900; line-height: 1.1; margin: 0 0 3px 0;
+}
+.md-goal-header-sub { color: var(--md-soft); font-size: 12.5px; line-height: 1.5; margin: 0; }
+.md-goal-body { padding: 18px 20px; background: var(--md-surface); }
+.md-goal-empty {
+    display: flex; flex-direction: row; align-items: center;
+    gap: 12px; padding: 14px 16px;
+    border-radius: var(--md-shape-md);
+    border: 1px dashed rgba(var(--md-primary-rgb), 0.22);
+    background: rgba(var(--md-primary-rgb), 0.04);
+    margin-top: 4px;
+}
+.md-goal-empty-icon { font-size: 22px; opacity: 0.55; flex-shrink: 0; }
+.md-goal-empty-title {
+    font-family: 'Outfit', sans-serif !important;
+    font-size: 13px; font-weight: 800; margin: 0 0 2px 0;
+}
+.md-goal-empty-sub { color: var(--md-soft); font-size: 12px; line-height: 1.4; margin: 0; }
+.md-goal-active-label {
+    font-size: 11px; font-weight: 900; color: var(--md-soft);
+    text-transform: uppercase; letter-spacing: 0.06em;
+    margin: 4px 0 10px 0;
+}
+[data-theme="light"] .md-goal-header { background: rgba(255,255,255,0.88) !important; border-color: rgba(0,106,106,0.18) !important; }
+[data-theme="light"] .md-goal-body { background: rgba(255,255,255,0.80) !important; }
+[data-theme="light"] .md-goal-header-title { color: #0a1f1f !important; }
+[data-theme="light"] .md-goal-header-sub { color: #3a6060 !important; }
+</style>
+""", unsafe_allow_html=True)
 
     goals = st.session_state.health_goals
+
+    # ── Header ────────────────────────────────────────────────────────────────
+    st.markdown("""
+<div class="md-goal-wrap">
+  <div class="md-goal-header">
+    <div class="md-goal-header-icon">🎯</div>
+    <div>
+      <div class="md-goal-header-kicker">✦ Goal Tracking</div>
+      <div class="md-goal-header-title">Health Goal Tracker</div>
+      <div class="md-goal-header-sub">Set personal heart-health goals and track your progress.</div>
+    </div>
+  </div>
+  <div class="md-goal-body">
+""", unsafe_allow_html=True)
 
     with st.expander("➕ Add a New Goal", expanded=False):
         use_preset = st.toggle("Use a preset goal", value=True, key="goal_preset_toggle")
@@ -3550,17 +4910,22 @@ def render_goal_tracker():
                 st.rerun()
 
     if not goals:
-        st.markdown(
-            '<div class="md-callout md-callout-info"><span class="md-callout-icon">💡</span>No goals yet. Add a goal above to start tracking your heart-health journey.</div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown("""
+<div class="md-goal-empty">
+  <div class="md-goal-empty-icon">🎯</div>
+  <div>
+    <p class="md-goal-empty-title">No goals yet</p>
+    <p class="md-goal-empty-sub">Add a goal above to start tracking your heart-health journey.</p>
+  </div>
+</div>""", unsafe_allow_html=True)
+        st.markdown("</div></div>", unsafe_allow_html=True)
         return
 
     active = [g for g in goals if not g.get("done")]
     completed = [g for g in goals if g.get("done")]
 
     if active:
-        st.markdown("**Active Goals**")
+        st.markdown('<div class="md-goal-active-label">Active Goals</div>', unsafe_allow_html=True)
         for idx, goal in enumerate(goals):
             if goal.get("done"):
                 continue
@@ -3608,6 +4973,8 @@ def render_goal_tracker():
                 st.session_state.health_goals = [g for g in goals if not g.get("done")]
                 st.rerun()
 
+    st.markdown("</div></div>", unsafe_allow_html=True)
+
 
 # =============================================================================
 # HEALTH JOURNAL / NOTES LOG
@@ -3616,70 +4983,263 @@ NOTE_TAGS = ["General", "Diet", "Exercise", "Sleep", "Medication", "Symptom", "M
 
 
 def render_notes_log():
-    st.markdown("#### 📓 Health Journal")
-    st.caption("Keep a personal log of health notes, observations, or reminders.")
+    # ── Health Journal CSS ─────────────────────────────────────────────────────
+    st.markdown("""
+<style>
+/* ── Journal wrapper ── */
+.md-journal-wrap {
+    border-radius: var(--md-shape-xl);
+    overflow: hidden;
+    border: 1px solid var(--md-outline);
+    box-shadow: var(--md-shadow-2);
+    animation: md-fade-up 450ms var(--md-ease-emphasized) both;
+}
 
+/* ── Journal header ── */
+.md-journal-header {
+    position: relative; overflow: hidden;
+    padding: 22px 24px 18px 24px;
+    background:
+        radial-gradient(700px 220px at 100% 0%, rgba(var(--md-secondary-rgb),0.22), transparent 60%),
+        radial-gradient(400px 160px at 0% 100%, rgba(var(--md-primary-rgb),0.14), transparent 55%),
+        linear-gradient(135deg, rgba(var(--md-primary-rgb),0.16), rgba(var(--md-secondary-rgb),0.10) 60%, transparent),
+        var(--md-surface-container);
+    border-bottom: 1px solid var(--md-outline);
+    display: flex; align-items: center; gap: 16px;
+}
+.md-journal-header::after {
+    content: "";
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(45deg, rgba(255,255,255,0.018) 0 2px, transparent 2px 18px);
+    pointer-events: none;
+}
+.md-journal-header-icon {
+    width: 52px; height: 52px; min-width: 52px;
+    border-radius: var(--md-shape-md);
+    background: linear-gradient(135deg, rgba(var(--md-secondary-rgb),0.30), rgba(var(--md-primary-rgb),0.20));
+    border: 1px solid rgba(var(--md-secondary-rgb),0.30);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 26px; flex-shrink: 0;
+    box-shadow: var(--md-shadow-1);
+}
+.md-journal-header-body { min-width: 0; flex: 1; }
+.md-journal-header-kicker {
+    display: inline-flex; align-items: center;
+    padding: 3px 10px; border-radius: var(--md-shape-pill);
+    background: rgba(var(--md-secondary-rgb),0.14);
+    border: 1px solid rgba(var(--md-secondary-rgb),0.30);
+    color: #7ca8e8; font-size: 10px; font-weight: 900;
+    letter-spacing: 0.07em; text-transform: uppercase; margin-bottom: 5px;
+}
+.md-journal-title {
+    font-family: 'Outfit', sans-serif !important;
+    font-size: 20px; font-weight: 900; line-height: 1.1;
+    margin: 0 0 3px 0;
+}
+.md-journal-sub { color: var(--md-soft); font-size: 12.5px; line-height: 1.5; margin: 0; }
+
+/* ── Journal body ── */
+.md-journal-body { padding: 18px 20px; background: var(--md-surface); }
+
+/* ── Entry card ── */
+.md-journal-entry {
+    display: flex; flex-direction: column; gap: 6px;
+    padding: 14px 16px;
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-shape-md);
+    background: var(--md-surface-container);
+    margin-bottom: 10px;
+    box-sizing: border-box; width: 100%;
+    transition: transform var(--md-dur-short) var(--md-ease-emphasized),
+                border-color var(--md-dur-short) var(--md-ease-emphasized),
+                box-shadow var(--md-dur-short) var(--md-ease-emphasized);
+    animation: md-fade-up 350ms var(--md-ease-emphasized) both;
+    position: relative; overflow: hidden;
+}
+.md-journal-entry::before {
+    content: "";
+    position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: var(--entry-accent, #14b8a6);
+    border-radius: 0;
+    opacity: 0.75;
+}
+.md-journal-entry:hover {
+    transform: translateX(4px);
+    border-color: rgba(var(--md-primary-rgb),0.35);
+    box-shadow: var(--md-shadow-1);
+}
+.md-journal-entry-top {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; flex-wrap: wrap;
+}
+.md-journal-time {
+    display: flex; align-items: center; gap: 5px;
+    color: var(--md-soft); font-size: 11px; font-weight: 700;
+    letter-spacing: 0.03em; white-space: nowrap;
+}
+.md-journal-tag {
+    display: inline-flex; align-items: center;
+    padding: 3px 10px; border-radius: var(--md-shape-pill);
+    font-size: 10.5px; font-weight: 900;
+    letter-spacing: 0.04em; text-transform: uppercase;
+    border: 1px solid; white-space: nowrap;
+    flex-shrink: 0;
+}
+.md-journal-text {
+    font-size: 13.5px; line-height: 1.6;
+    word-break: break-word; overflow-wrap: anywhere;
+    /* ensure text never clips */
+    white-space: normal; min-width: 0;
+}
+
+/* ── Empty state ── */
+.md-journal-empty {
+    display: flex; flex-direction: row; align-items: center;
+    gap: 12px; padding: 14px 16px;
+    border-radius: var(--md-shape-md);
+    border: 1px dashed rgba(var(--md-primary-rgb), 0.22);
+    background: rgba(var(--md-primary-rgb), 0.04);
+    margin-top: 4px;
+}
+.md-journal-empty-icon { font-size: 22px; opacity: 0.55; flex-shrink: 0; }
+.md-journal-empty-title {
+    font-family: 'Outfit', sans-serif !important;
+    font-size: 13px; font-weight: 800; margin: 0 0 2px 0;
+}
+.md-journal-empty-sub { color: var(--md-soft); font-size: 12px; line-height: 1.4; margin: 0; }
+
+/* ── Action row ── */
+.md-journal-actions {
+    display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap;
+}
+
+/* ── Add button: compact height matching selectbox ── */
+.md-journal-body [data-testid="stFormSubmitButton"] button {
+    min-height: 38px !important;
+    height: 38px !important;
+    font-size: 13px !important;
+    padding: 0 16px !important;
+    line-height: 1 !important;
+}
+
+/* ── Light mode ── */
+[data-theme="light"] .md-journal-header {
+    background: rgba(255,255,255,0.88) !important;
+    border-color: rgba(0,106,106,0.18) !important;
+}
+[data-theme="light"] .md-journal-body { background: rgba(255,255,255,0.80) !important; }
+[data-theme="light"] .md-journal-entry {
+    background: rgba(255,255,255,0.90) !important;
+    border-color: rgba(0,106,106,0.13) !important;
+}
+[data-theme="light"] .md-journal-entry:hover { border-color: rgba(0,106,106,0.35) !important; }
+[data-theme="light"] .md-journal-text { color: #0a1f1f !important; }
+[data-theme="light"] .md-journal-title { color: #0a1f1f !important; }
+[data-theme="light"] .md-journal-sub { color: #3a6060 !important; }
+</style>
+""", unsafe_allow_html=True)
+
+    TAG_COLORS = {
+        "Symptom":    ("#ef4444",  "rgba(239,68,68,0.13)",   "rgba(239,68,68,0.30)"),
+        "Diet":       ("#14b8a6",  "rgba(20,184,166,0.12)",  "rgba(20,184,166,0.28)"),
+        "Exercise":   ("#3b82f6",  "rgba(59,130,246,0.12)",  "rgba(59,130,246,0.28)"),
+        "Sleep":      ("#8b5cf6",  "rgba(139,92,246,0.12)",  "rgba(139,92,246,0.28)"),
+        "Medication": ("#f59e0b",  "rgba(245,158,11,0.12)",  "rgba(245,158,11,0.28)"),
+        "Mood":       ("#ec4899",  "rgba(236,72,153,0.12)",  "rgba(236,72,153,0.28)"),
+        "Goal":       ("#006a6a",  "rgba(0,106,106,0.12)",   "rgba(0,106,106,0.28)"),
+        "General":    ("#64748b",  "rgba(100,116,139,0.12)", "rgba(100,116,139,0.28)"),
+    }
+
+    # ── Header ───────────────────────────────────────────────────────────────
+    st.markdown("""
+<div class="md-journal-wrap">
+  <div class="md-journal-header">
+    <div class="md-journal-header-icon">📓</div>
+    <div class="md-journal-header-body">
+      <div class="md-journal-header-kicker">✦ Wellness Tracking</div>
+      <div class="md-journal-title">Health Journal</div>
+      <div class="md-journal-sub">Log notes, symptoms, habits & reminders — all stored locally in your session.</div>
+    </div>
+  </div>
+  <div class="md-journal-body">
+""", unsafe_allow_html=True)
+
+    # ── Add-entry form ────────────────────────────────────────────────────────
     with st.form("note_form", clear_on_submit=True):
-        nc1, nc2 = st.columns([4, 1])
-        with nc1:
-            note_text = st.text_area("New entry", placeholder="e.g. Felt short of breath after climbing stairs. Scheduled a checkup.", height=90, label_visibility="collapsed")
-        with nc2:
-            note_tag = st.selectbox("Tag", NOTE_TAGS, label_visibility="collapsed")
-        submitted_note = st.form_submit_button("Add Entry", use_container_width=True)
+        note_text = st.text_area(
+            "New journal entry",
+            placeholder="e.g. Felt short of breath after climbing stairs. Scheduled a checkup for next week.",
+            height=92,
+            label_visibility="visible",
+        )
+        # Tag selector + Add button on their own row
+        fc_tag, fc_btn = st.columns([2, 1])
+        with fc_tag:
+            note_tag = st.selectbox("Category tag", NOTE_TAGS, label_visibility="visible")
+        with fc_btn:
+            st.markdown('<div style="margin-top:28px;"></div>', unsafe_allow_html=True)
+            submitted_note = st.form_submit_button("＋ Add", use_container_width=False)
         if submitted_note and note_text.strip():
             st.session_state.notes_log.append({
                 "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "text": note_text.strip(),
                 "tag": note_tag,
             })
-            st.success("Entry saved.")
+            st.success("Entry saved to your journal.")
             st.rerun()
 
     notes = st.session_state.notes_log
+
     if not notes:
-        st.markdown(
-            '<div class="md-callout md-callout-info"><span class="md-callout-icon">📓</span>No journal entries yet. Add your first health note above.</div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown("""
+<div class="md-journal-empty">
+  <div class="md-journal-empty-icon">📝</div>
+  <div>
+    <p class="md-journal-empty-title">No entries yet</p>
+    <p class="md-journal-empty-sub">Add your first health note, symptom, or goal check-in above.</p>
+  </div>
+</div>""", unsafe_allow_html=True)
+        st.markdown("</div></div>", unsafe_allow_html=True)
         return
 
+    # ── Filter ────────────────────────────────────────────────────────────────
     tags_present = sorted(set(n["tag"] for n in notes))
-    filter_tag = st.selectbox("Filter by tag", ["All"] + tags_present, key="notes_filter")
-
+    filter_tag = st.selectbox("Filter by category", ["All"] + tags_present, key="notes_filter", label_visibility="visible")
     filtered = [n for n in reversed(notes) if filter_tag == "All" or n["tag"] == filter_tag]
 
-    for i, note in enumerate(filtered):
-        tag_color_map = {
-            "Symptom": "#ef4444", "Diet": "#14b8a6", "Exercise": "#3b82f6",
-            "Sleep": "#8b5cf6", "Medication": "#f59e0b", "Mood": "#ec4899",
-            "Goal": "#006a6a", "General": "#94a3b8",
-        }
-        tag_color = tag_color_map.get(note["tag"], "#94a3b8")
-        st.markdown(
-            f"""
-<div class="md-note-item">
-  <div class="md-note-time">{escape(note['time'])}</div>
-  <div class="md-note-text">{escape(note['text'])}</div>
-  <span class="md-note-tag" style="border-color:{tag_color}30; color:{tag_color}; background:{tag_color}12;">{escape(note['tag'])}</span>
-</div>
-""",
-            unsafe_allow_html=True,
-        )
+    st.markdown(f'<div style="font-size:11px; color:var(--md-soft); font-weight:700; margin:4px 0 10px 0; letter-spacing:0.05em; text-transform:uppercase;">Showing {len(filtered)} entr{"y" if len(filtered)==1 else "ies"}</div>', unsafe_allow_html=True)
 
-    if notes:
+    # ── Entry cards ───────────────────────────────────────────────────────────
+    for i, note in enumerate(filtered):
+        color, bg, border = TAG_COLORS.get(note["tag"], ("#64748b", "rgba(100,116,139,0.12)", "rgba(100,116,139,0.28)"))
+        delay = min(i * 50, 300)
+        st.markdown(f"""
+<div class="md-journal-entry" style="--entry-accent:{color}; animation-delay:{delay}ms;">
+  <div class="md-journal-entry-top">
+    <span class="md-journal-time">🕐 {escape(note['time'])}</span>
+    <span class="md-journal-tag" style="color:{color}; background:{bg}; border-color:{border};">{escape(note['tag'])}</span>
+  </div>
+  <div class="md-journal-text">{escape(note['text'])}</div>
+</div>""", unsafe_allow_html=True)
+
+    # ── Actions ───────────────────────────────────────────────────────────────
+    st.markdown('<div class="md-journal-actions">', unsafe_allow_html=True)
+    dl1, dl2 = st.columns(2)
+    with dl1:
         notes_df = pd.DataFrame(notes)
         csv_bytes = notes_df.to_csv(index=False).encode("utf-8")
-        dl1, dl2 = st.columns(2)
-        with dl1:
-            st.download_button(
-                "⬇️ Export journal (CSV)", data=csv_bytes,
-                file_name="health_journal.csv", mime="text/csv",
-                use_container_width=True, key="notes_csv",
-            )
-        with dl2:
-            if st.button("🗑️ Clear all entries", key="clear_notes"):
-                st.session_state.notes_log = []
-                st.rerun()
+        st.download_button(
+            "⬇️ Export CSV", data=csv_bytes,
+            file_name="health_journal.csv", mime="text/csv",
+            use_container_width=True, key="notes_csv",
+        )
+    with dl2:
+        if st.button("🗑️ Clear all entries", key="clear_notes", use_container_width=True):
+            st.session_state.notes_log = []
+            st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown("</div></div>", unsafe_allow_html=True)
 
 
 # =============================================================================
@@ -3750,8 +5310,14 @@ with tab_assess:
     with col_left:
         st.markdown(
             """
-<div class="md-form-title">Heart Disease Risk Assessment</div>
-<div class="md-form-subtitle">Complete the form below. Your information is used only for this local assessment.</div>
+<div class="md-form-section-header">
+  <div class="md-form-header-icon">🩺</div>
+  <div class="md-form-header-body">
+    <div class="md-form-header-kicker">🔬 AI Risk Screening</div>
+    <div class="md-form-title">Heart Disease Risk Assessment</div>
+    <div class="md-form-subtitle">Complete all sections below. Your data is processed locally — never sent externally. Results appear on the right panel in real-time.</div>
+  </div>
+</div>
 """,
             unsafe_allow_html=True,
         )
@@ -3860,6 +5426,7 @@ with tab_assess:
                     st.session_state.pie_df = pie_df
                     st.session_state.recommendation_intro = get_recommendation_intro(risk)
                     st.session_state.feature_importance_df = feature_importance_df
+                    st.session_state["whatif_sim_result"] = None  # reset simulator on new assessment
                     st.session_state.history.append({
                         "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
                         "risk": risk,
@@ -4045,11 +5612,10 @@ with tab_insights:
 with tab_tools:
     t1, t2 = st.columns([1, 1], gap="large")
     with t1:
-        with st.container(border=True):
-            suggested = render_bmi_calculator()
-            if st.button("Use this BMI in the form", use_container_width=True):
-                st.session_state.bmi_suggestion = suggested
-                st.success("BMI category set. It will pre-fill on the Assessment tab.")
+        suggested = render_bmi_calculator()
+        if st.button("✅ Use this BMI in the Assessment form", use_container_width=True, key="bmi_use_btn"):
+            st.session_state.bmi_suggestion = suggested
+            st.success("BMI category set — it will pre-fill on the Assessment tab.")
     with t2:
         with st.container(border=True):
             if st.session_state.risk_result is None:
@@ -4091,11 +5657,9 @@ with tab_tools:
 with tab_wellness:
     w1, w2 = st.columns([1, 1], gap="large")
     with w1:
-        with st.container(border=True):
-            render_goal_tracker()
+        render_goal_tracker()
     with w2:
-        with st.container(border=True):
-            render_notes_log()
+        render_notes_log()
 
     st.markdown('<div style="margin-top:8px;"></div>', unsafe_allow_html=True)
     with st.container(border=True):
@@ -4351,7 +5915,7 @@ with tab_about:
     <div>{about_logo_html}</div>
     <div>
       <div class="about-badge">Open Source · Educational</div>
-      <h2 class="about-hero-title">SmartHealthCare<br/>for Early Diagnosis</h2>
+      <h2 class="about-hero-title">Heart Disease Risk Assessment</h2>
       <p class="about-hero-sub">
         An AI-powered heart disease risk assessment platform combining a LightGBM ensemble model with
         SHAP-based explanations, Material 3 Expressive design, and actionable personalised health insights.
@@ -5868,9 +7432,8 @@ with tab_scan:
 .studio-title {
     font-size: clamp(1.8rem, 3.5vw, 2.6rem);
     font-weight: 900; letter-spacing: -0.03em; line-height: 1.1;
-    background: linear-gradient(135deg, var(--md-on-surface) 30%, rgba(var(--md-primary-rgb),0.90) 70%, rgba(var(--md-tertiary-rgb),0.85) 100%);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-    background-clip: text; margin-bottom: 12px;
+    color: var(--md-on-surface);
+    margin-bottom: 12px;
 }
 .studio-subtitle {
     font-size: 1.05rem; color: var(--md-on-surface-variant);
@@ -6115,7 +7678,7 @@ with tab_scan:
     st.markdown("""
 <div class="studio-hero">
   <div class="studio-badge">✦ AI-Powered · Clinically Inspired · Instant Results</div>
-  <div class="studio-title">Scan Enhancement Studio</div>
+  <div class="studio-title">🫀 Scan Enhancement Studio</div>
   <div class="studio-subtitle">
     Upload any cardiac scan and instantly view it transformed across <strong>6 professional enhancement panels</strong> —
     contrast boost, edge detection, false-color mapping, sharpening, inversion, and percentile normalization.

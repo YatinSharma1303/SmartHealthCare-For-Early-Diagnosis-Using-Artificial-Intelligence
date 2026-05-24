@@ -7,7 +7,7 @@
 
 <!-- VERSION & CORE BADGES -->
 <p align="center">
-  <img src="https://img.shields.io/badge/v2.0.1-Material%20Design%203%20Expressive-6750a4?style=for-the-badge&labelColor=1a0a3c&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0xMiAyQzYuNDggMiAyIDYuNDggMiAxMnM0LjQ4IDEwIDEwIDEwIDEwLTQuNDggMTAtMTBTMTcuNTIgMiAxMiAyek0xMiAxNS41Yy0xLjM4IDAtMi41LTEuMTItMi41LTIuNXMxLjEyLTIuNSAyLjUtMi41IDIuNSAxLjEyIDIuNSAyLjUtMS4xMiAyLjUtMi41IDIuNXoiLz48L3N2Zz4=" />
+  <img src="https://img.shields.io/badge/v2.0.2-Material%20Design%203%20Expressive-6750a4?style=for-the-badge&labelColor=1a0a3c&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0xMiAyQzYuNDggMiAyIDYuNDggMiAxMnM0LjQ4IDEwIDEwIDEwIDEwLTQuNDggMTAtMTBTMTcuNTIgMiAxMiAyek0xMiAxNS41Yy0xLjM4IDAtMi41LTEuMTItMi41LTIuNXMxLjEyLTIuNSAyLjUtMi41IDIuNSAxLjEyIDIuNSAyLjUtMS4xMiAyLjUtMi41IDIuNXoiLz48L3N2Zz4=" />
 &nbsp;
   <img src="https://img.shields.io/badge/Python-3.11.9-3776AB?style=for-the-badge&labelColor=1a2a3c&logo=python&logoColor=ffd343" />
 &nbsp;
@@ -84,7 +84,7 @@
 
 ## ✨ Overview
 
-**SmartHealthCare AI v2.0.1** is a cutting-edge, multi-module medical intelligence platform. It brings together four distinct AI-powered healthcare tools — Disease Prediction, Drug Recommendation, Heart Risk Assessment, and a RAG Chatbot — under one unified **Material Design 3 Expressive** interface with full **dark / light theme support**, responsive layout, micro-animations, and a **floating speed-dial widget** on every page.
+**SmartHealthCare AI v2.0.2** is a cutting-edge, multi-module medical intelligence platform. It brings together four distinct AI-powered healthcare tools — Disease Prediction, Drug Recommendation, Heart Risk Assessment, and a RAG Chatbot — under one unified **Material Design 3 Expressive** interface with full **dark / light theme support**, responsive layout, micro-animations, and a **floating speed-dial widget** on every page.
 
 <br/>
 
@@ -100,7 +100,7 @@
 
 ```
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║             SmartHealthCare AI  v2.0.1  —  Material Design 3 Expressive       ║
+║             SmartHealthCare AI  v2.0.2  —  Material Design 3 Expressive       ║
 ║                                                                              ║
 ║  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐            ║
 ║  │ 🔍 Disease  │  │ 💊 Drug    │  │ ❤️  Heart  │  │ 🤖 Medibot │            ║
@@ -122,7 +122,7 @@
 
 ## 🆕 What's New — Latest Changes
 
-> This section documents **all recent additions and changes** to the codebase that expand upon the original v2.0.1 feature set.
+> This section documents **all recent additions and changes** to the codebase that expand upon the original v2.0.2 feature set.
 
 <br/>
 
