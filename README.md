@@ -195,12 +195,12 @@ This makes the conversation context immediately visible and the export action mo
 
 | Layer | File / Folder | What It Does | Current Size |
 |---|---|---|---:|
-| 🏠 **Main entry** | `home.py` | Landing dashboard, health tips, risk awareness, self-assessment, symptom quick-check, vital signs, screening timeline, contact/footer, floating widget | ~4,319 lines |
+| 🏠 **Main entry** | `home.py` | Landing dashboard, health tips, risk awareness, self-assessment, symptom quick-check, vital signs, screening timeline, contact/footer, floating widget | ~4,335 lines |
 | 🎨 **Global theme** | `theme_config.py` | Shared dark/light theme tokens, sidebar fixes, Material Design 3 inspired CSS overrides | ~1,298 lines |
-| 🔍 **Disease AI page** | `pages/1_Disease-Prediction-and-medical-recommendation.py` | Random Forest symptom prediction, disease explorer, severity insights, history, medical recommendations | ~3,548 lines |
-| 💊 **MedMatch AI page** | `pages/2_drug_recommendation.py` | NLP/cosine drug recommendation, drug detail, compare, watchlist, interactions, A-Z browser, dosage guide | ~3,667 lines |
-| ❤️ **Heart risk page** | `pages/3_heart_Disease_Risk_Assesment.py` | LightGBM heart risk scoring, SHAP-style drivers, PDF/JSON export, wellness tools, scan studio | ~6,522 lines |
-| 🤖 **Medibot page** | `pages/4_Medibot.py` | RAG chatbot, FAISS retrieval, Groq LLM, voice input, symptom checker, medication reminders, saved answers | ~5,181 lines |
+| 🔍 **Disease AI page** | `pages/1_Disease-Prediction-and-medical-recommendation.py` | Random Forest symptom prediction, disease explorer, severity insights, history, medical recommendations | ~3,537 lines |
+| 💊 **MedMatch AI page** | `pages/2_drug_recommendation.py` | NLP/cosine drug recommendation, drug detail, compare, watchlist, interactions, A-Z browser, dosage guide | ~3,668 lines |
+| ❤️ **Heart risk page** | `pages/3_heart_Disease_Risk_Assesment.py` | LightGBM heart risk scoring, SHAP-style drivers, PDF/JSON export, wellness tools, scan studio | ~8,072 lines |
+| 🤖 **Medibot page** | `pages/4_Medibot.py` | RAG chatbot, FAISS retrieval, Groq LLM, voice input, symptom checker, medication reminders, saved answers | ~5,243 lines |
 
 <br/>
 
