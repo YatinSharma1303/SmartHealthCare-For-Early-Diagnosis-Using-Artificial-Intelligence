@@ -3287,89 +3287,125 @@ def render_floating_widget():
             }
         }, 250);
     }
-    function clickWidgetBridge(page) {
-        const wanted = normalizeText("widget-nav-" + page);
-        const target = Array.from(parentDoc.querySelectorAll("button")).find(button =>
-            !root.contains(button) && normalizeText(getElementText(button)) === wanted
-        );
-        if (target) {
-            activateElement(target);
+    // Map page name to the visible nav radio label text
+    const PAGE_NAV_LABELS = {
+        "Home":     "Home",
+        "Diagnose": "Diagnose",
+        "Library":  "Library",
+        "Insights": "Insights",
+        "History":  "History",
+        "About":    "About",
+    };
+
+    function smoothScrollToTop() {
+        // Find Streamlit's main scrollable container and smooth-scroll it to top
+        var scrollEl = null;
+        var selectors = [
+            '[data-testid="stMain"]',
+            '[data-testid="stAppViewContainer"]',
+            '[data-testid="block-container"]',
+            '.main > div',
+            'section.main',
+            '.stApp > section',
+        ];
+        for (var s = 0; s < selectors.length; s++) {
+            var el = parentDoc.querySelector(selectors[s]);
+            if (el && el.scrollHeight > el.clientHeight) { scrollEl = el; break; }
+        }
+        var targets = scrollEl ? [scrollEl] : [parentDoc.documentElement, parentDoc.body];
+        targets.forEach(function(el) {
+            if (!el || el.scrollTop === 0) return;
+            var start = el.scrollTop;
+            var startTime = null;
+            var duration = 480;
+            function ease(t) { return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2; }
+            function step(ts) {
+                if (!startTime) startTime = ts;
+                var prog = Math.min((ts - startTime) / duration, 1);
+                el.scrollTop = start * (1 - ease(prog));
+                if (prog < 1) parentWin.requestAnimationFrame(step);
+            }
+            parentWin.requestAnimationFrame(step);
+        });
+        try { parentWin.scrollTo({top: 0, behavior: "smooth"}); } catch(_) {}
+    }
+
+    function clickNavRadio(page) {
+        // Click the visible main nav radio button that matches the page label
+        var label = PAGE_NAV_LABELS[page] || page;
+        var normalized = normalizeText(label);
+        // Look for label elements wrapping radio inputs (Streamlit radio)
+        var allLabels = Array.from(parentDoc.querySelectorAll(
+            '[data-testid="stRadio"] label, [role="radio"], label'
+        ));
+        var match = allLabels.find(function(el) {
+            if (root.contains(el)) return false;
+            var txt = normalizeText(getElementText(el));
+            return txt === normalized || txt.includes(normalized);
+        });
+        if (match) {
+            var inp = match.querySelector && match.querySelector('input[type="radio"]');
+            var clickTarget = inp || match;
+            ["pointerdown","mousedown","mouseup","click"].forEach(function(ev) {
+                clickTarget.dispatchEvent(new parentWin.MouseEvent(ev, {bubbles:true, cancelable:true, view:parentWin}));
+            });
+            clickTarget.click();
             return true;
         }
+        // Fallback: find any button/div containing exactly this page label
+        var btns = Array.from(parentDoc.querySelectorAll('button, [role="tab"]'));
+        var btn = btns.find(function(el) {
+            if (root.contains(el)) return false;
+            var txt = normalizeText(getElementText(el));
+            return txt === normalized || (txt.includes(normalized) && txt.length < normalized.length + 12);
+        });
+        if (btn) { activateElement(btn); return true; }
         return false;
     }
-    function openDiseasePage(page, scrollTarget) {
-        const wanted = scrollTarget || page;
-        // Try setting URL on parent or top window to trigger Streamlit query param rerun
-        const wins = [parentWin, window.top].filter(Boolean);
-        for (const w of wins) {
-            try {
-                const url = new URL(w.location.href);
-                url.searchParams.set("disease_page", page);
-                w.location.href = url.toString();
-                savePendingScroll(wanted);
-                return true;
-            } catch (_) {}
-        }
-        // Fallback: hidden bridge buttons
-        if (clickWidgetBridge(page)) {
-            savePendingScroll(wanted);
-            parentWin.setTimeout(() => scrollWithRetries(wanted), 900);
+
+    function navigateToPage(page, andFocusInput) {
+        var ok = clickNavRadio(page);
+        if (ok) {
+            // Smooth scroll to top after Streamlit rerenders (~700ms)
+            parentWin.setTimeout(smoothScrollToTop, 700);
+            parentWin.setTimeout(smoothScrollToTop, 1200);
+            if (andFocusInput) {
+                parentWin.setTimeout(function() {
+                    if (!focusInput()) parentWin.setTimeout(focusInput, 500);
+                }, 1400);
+            }
             return true;
         }
-        if (scrollToText(wanted)) { clearPendingScroll(); return true; }
+        // Last resort: query param hard navigation
+        try {
+            var url = new URL(parentWin.location.href);
+            url.searchParams.set("disease_page", page);
+            if (andFocusInput) {
+                try { parentWin.localStorage.setItem(widgetId + "-pending-focus", "1"); } catch(_) {}
+            }
+            parentWin.location.href = url.toString();
+            return true;
+        } catch(_) {}
         return false;
     }
+
     function runAction(kind, target, scrollTarget) {
         if (kind === "top") {
-            (function() {
-                function smoothScrollTo(el) {
-                    if (!el || el.scrollTop === 0) return;
-                    var start = el.scrollTop;
-                    var startTime = null;
-                    var duration = 520;
-                    function ease(t) { return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2; }
-                    function step(timestamp) {
-                        if (!startTime) startTime = timestamp;
-                        var progress = Math.min((timestamp - startTime) / duration, 1);
-                        el.scrollTop = start * (1 - ease(progress));
-                        if (progress < 1) parentWin.requestAnimationFrame(step);
-                    }
-                    parentWin.requestAnimationFrame(step);
-                }
-                var selectors = [
-                    '[data-testid="stMain"]',
-                    '[data-testid="stAppViewContainer"]',
-                    '[data-testid="block-container"]',
-                    '.main > div',
-                    'section.main',
-                    '.stApp > section',
-                ];
-                selectors.forEach(function(sel) {
-                    var el = parentDoc.querySelector(sel);
-                    if (el) smoothScrollTo(el);
-                });
-                smoothScrollTo(parentDoc.documentElement);
-                smoothScrollTo(parentDoc.body);
-                parentWin.scrollTo({top: 0, behavior: "smooth"});
-            })();
+            smoothScrollToTop();
             clearPendingScroll();
             return true;
         }
         if (kind === "input") {
-            if (focusInput()) return true;
-            savePendingFocus();
-            const ok = openDiseasePage(target, "Predict Disease From Symptoms");
-            parentWin.setTimeout(applyPendingFocus, 800);
-            return ok || true;
+            // Navigate to Diagnose tab and focus the symptom input
+            var alreadyOnDiagnose = !!parentDoc.querySelector(
+                '[data-testid="stMultiSelect"], [data-testid="stTextArea"]'
+            );
+            if (alreadyOnDiagnose && focusInput()) return true;
+            return navigateToPage("Diagnose", true);
         }
-        if (kind === "tab") {
-            savePendingScroll(scrollTarget || target);
-            const ok = clickByText('[role="tab"], [data-baseweb="tab"], button', target);
-            if (ok) parentWin.setTimeout(() => scrollWithRetries(scrollTarget || target), 280);
-            return ok;
+        if (kind === "nav") {
+            return navigateToPage(target, false);
         }
-        if (kind === "nav") return openDiseasePage(target, scrollTarget);
         if (kind === "scroll") {
             clearPendingScroll();
             return scrollToText(scrollTarget || target);
