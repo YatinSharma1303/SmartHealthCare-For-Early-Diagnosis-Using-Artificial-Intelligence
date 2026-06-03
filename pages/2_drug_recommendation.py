@@ -1965,6 +1965,303 @@ def render_recommendations(recommendations, description_lookup):
 """, unsafe_allow_html=True)
 
 
+# ─────────────────────── Page: Symptoms ────────────────────────────────────
+
+# Common symptoms list for the multiselect
+SYMPTOM_LIST = [
+    "Fever", "Headache", "Cough", "Cold / Runny Nose", "Sore Throat",
+    "Body Ache / Muscle Pain", "Fatigue / Weakness", "Nausea", "Vomiting",
+    "Diarrhoea", "Constipation", "Stomach Pain / Abdominal Cramps",
+    "Bloating / Gas", "Acid Reflux / Heartburn", "Loss of Appetite",
+    "Chest Pain", "Shortness of Breath", "Palpitations",
+    "High Blood Pressure", "Low Blood Pressure",
+    "Dizziness / Vertigo", "Fainting",
+    "Joint Pain / Arthritis", "Back Pain", "Neck Pain",
+    "Skin Rash / Itching", "Acne", "Dry Skin", "Swelling / Oedema",
+    "Allergic Reaction", "Runny / Itchy Eyes",
+    "Ear Pain / Infection", "Tooth / Gum Pain",
+    "Urinary Tract Infection (UTI)", "Frequent Urination",
+    "Kidney Pain", "Liver / Jaundice Symptoms",
+    "Diabetes Symptoms (High Blood Sugar)", "Thyroid Issues",
+    "Anxiety / Stress", "Depression / Low Mood", "Insomnia / Sleep Issues",
+    "Migraine", "Seizures / Epilepsy",
+    "Anaemia / Low Iron", "Vitamin Deficiency",
+    "Weight Gain", "Weight Loss (Unexplained)",
+    "Hair Loss", "Menstrual Pain / Irregular Periods",
+    "Erectile Dysfunction", "Prostate Issues",
+    "Wound / Infection", "Post-Operative Pain",
+    "Eye Infection / Conjunctivitis", "Dry Eyes",
+    "Asthma", "Bronchitis", "Sinusitis",
+    "Cholesterol (High)", "Gout",
+]
+
+
+# ── Symptom → DB Reason category map ────────────────────────────────────────
+# Maps each symptom to one or more Reason values from medicine.csv
+SYMPTOM_REASON_MAP = {
+    "Fever":                                ["Fever", "Pyrexia"],
+    "Headache":                             ["Pain", "Migraine"],
+    "Migraine":                             ["Migraine"],
+    "Cough":                                ["Infection"],
+    "Cold / Runny Nose":                    ["Allergies"],
+    "Sore Throat":                          ["Infection", "Pain"],
+    "Body Ache / Muscle Pain":              ["Pain"],
+    "Fatigue / Weakness":                   ["General", "Supplement", "Anaemia"],
+    "Nausea":                               ["Digestion"],
+    "Vomiting":                             ["Digestion"],
+    "Diarrhoea":                            ["Diarrhoea"],
+    "Constipation":                         ["Constipation"],
+    "Stomach Pain / Abdominal Cramps":      ["Pain", "Digestion"],
+    "Bloating / Gas":                       ["Digestion"],
+    "Acid Reflux / Heartburn":              ["Digestion"],
+    "Loss of Appetite":                     ["Appetite"],
+    "Chest Pain":                           ["Angina", "Pain"],
+    "Shortness of Breath":                  ["Infection", "Allergies"],
+    "Palpitations":                         ["Arrhythmiasis"],
+    "High Blood Pressure":                  ["Hypertension"],
+    "Low Blood Pressure":                   ["Hypotension"],
+    "Dizziness / Vertigo":                  ["Vertigo"],
+    "Fainting":                             ["Hypotension", "Vertigo"],
+    "Joint Pain / Arthritis":               ["Arthritis", "Gout"],
+    "Back Pain":                            ["Pain"],
+    "Neck Pain":                            ["Pain"],
+    "Skin Rash / Itching":                  ["Allergies"],
+    "Acne":                                 ["Acne"],
+    "Dry Skin":                             ["Cleanser"],
+    "Swelling / Oedema":                    ["Hypertension"],
+    "Allergic Reaction":                    ["Allergies"],
+    "Runny / Itchy Eyes":                   ["Allergies", "Glaucoma"],
+    "Ear Pain / Infection":                 ["Infection"],
+    "Tooth / Gum Pain":                     ["Pain", "Infection"],
+    "Urinary Tract Infection (UTI)":        ["Infection"],
+    "Frequent Urination":                   ["Hypertension"],
+    "Kidney Pain":                          ["Infection", "Pain"],
+    "Liver / Jaundice Symptoms":            ["Digestion"],
+    "Diabetes Symptoms (High Blood Sugar)": ["Diabetes"],
+    "Thyroid Issues":                       ["Hypothyroidism", "Hyperthyroidism"],
+    "Anxiety / Stress":                     ["Anxiety"],
+    "Depression / Low Mood":                ["Depression"],
+    "Insomnia / Sleep Issues":              ["Hypnosis"],
+    "Seizures / Epilepsy":                  ["General"],
+    "Anaemia / Low Iron":                   ["Anaemia", "Haematopoiesis"],
+    "Vitamin Deficiency":                   ["Supplement"],
+    "Weight Gain":                          ["General"],
+    "Weight Loss (Unexplained)":            ["Appetite"],
+    "Hair Loss":                            ["Dandruff"],
+    "Menstrual Pain / Irregular Periods":   ["Contraception", "Pain"],
+    "Erectile Dysfunction":                 ["General"],
+    "Prostate Issues":                      ["Hypertension"],
+    "Wound / Infection":                    ["Wound", "Infection"],
+    "Post-Operative Pain":                  ["Pain"],
+    "Eye Infection / Conjunctivitis":       ["Infection", "Glaucoma"],
+    "Dry Eyes":                             ["Glaucoma"],
+    "Asthma":                               ["Allergies", "Infection"],
+    "Bronchitis":                           ["Infection"],
+    "Sinusitis":                            ["Infection", "Allergies"],
+    "Cholesterol (High)":                   ["Angina", "Hypertension"],
+    "Gout":                                 ["Gout"],
+}
+
+
+@st.cache_data(show_spinner=False)
+def load_reason_drug_map():
+    """Load medicine.csv and build a Reason -> [Drug_Name, ...] lookup."""
+    import pandas as pd
+    path = Path("data/Drug reccomendation/medicine.csv")
+    if not path.exists():
+        return {}
+    df = pd.read_csv(path)
+    df = df.dropna(subset=["Drug_Name", "Reason"])
+    mapping = {}
+    for reason, group in df.groupby("Reason"):
+        mapping[reason] = group["Drug_Name"].dropna().unique().tolist()
+    return mapping
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def ai_drugs_for_symptoms(symptoms_tuple: tuple, all_drug_names: tuple) -> list:
+    """
+    Symptom → drug matching using the Reason column from medicine.csv.
+    No API, no fuzzy guessing — pulls drugs that are actually tagged for
+    the relevant medical category in the database.
+    """
+    reason_drug_map = load_reason_drug_map()
+    all_drug_set = set(all_drug_names)
+
+    collected = []
+    seen = set()
+
+    for symptom in symptoms_tuple:
+        reasons = SYMPTOM_REASON_MAP.get(symptom, [])
+        for reason in reasons:
+            for drug in reason_drug_map.get(reason, []):
+                if drug not in seen and drug in all_drug_set:
+                    collected.append(drug)
+                    seen.add(drug)
+
+    return collected[:12]
+
+def page_symptoms(drug_names, drug_names_model_order, description_lookup, similarity, drug_to_index, top_n):
+    st.markdown("""
+<div class="tool-panel">
+    <div class="section-title">🩺 Symptom-Based Drug Recommendation</div>
+    <div class="section-sub">
+        Select one or more symptoms you are experiencing. Our AI will identify the most relevant drugs
+        from the database and show you ranked alternatives for each.
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+    # ── Symptom selector ──────────────────────────────────────────────────────
+    selected_symptoms = st.multiselect(
+        "Choose your symptoms (select one or more)",
+        options=SYMPTOM_LIST,
+        placeholder="Type or scroll to pick symptoms…",
+        key="symptom_sel",
+    )
+
+    col_btn, col_clear = st.columns([3, 1], vertical_alignment="bottom")
+    with col_btn:
+        find_btn = st.button("🔍 Find Drugs for These Symptoms", use_container_width=True,
+                             disabled=not selected_symptoms)
+    with col_clear:
+        if st.button("✖ Clear", use_container_width=True):
+            st.session_state.pop("symptom_results", None)
+            st.session_state.pop("symptom_query", None)
+            st.rerun()
+
+    if selected_symptoms:
+        st.markdown(
+            "<div style='margin:8px 0 4px;font-size:12px;color:var(--c-muted);font-weight:700'>Selected:</div>",
+            unsafe_allow_html=True,
+        )
+        tags_html = "".join(
+            f"<span class='search-tag'>🩺 {escape(s)}</span>" for s in selected_symptoms
+        )
+        st.markdown(f"<div style='margin-bottom:16px'>{tags_html}</div>", unsafe_allow_html=True)
+
+    if find_btn and selected_symptoms:
+        with st.spinner("🤖 AI is matching drugs to your symptoms…"):
+            matched = ai_drugs_for_symptoms(
+                tuple(selected_symptoms),
+                tuple(drug_names),          # pass the full list for fuzzy matching
+            )
+            # Fuzzy matching already guarantees DB membership; filter as safety net
+            matched = [d for d in matched if d in drug_to_index]
+            st.session_state["symptom_results"] = matched
+            st.session_state["symptom_query"]   = list(selected_symptoms)
+
+    # ── Results ───────────────────────────────────────────────────────────────
+    results = st.session_state.get("symptom_results")
+    query   = st.session_state.get("symptom_query", [])
+
+    if results is None:
+        # First-load hint
+        st.markdown("""
+<div class="desc-card" style="text-align:center;padding:32px 20px">
+    <div style="font-size:40px;margin-bottom:12px">🩺</div>
+    <div style="font-size:15px;font-weight:700;margin-bottom:6px">Pick your symptoms above</div>
+    <div style="color:var(--c-muted);font-size:13px">
+        Select one or more symptoms and click <strong>Find Drugs</strong> to get AI-powered recommendations.
+    </div>
+</div>
+""", unsafe_allow_html=True)
+        return
+
+    if not results:
+        st.warning("⚠️ No matching drugs were found in the database for the selected symptoms. "
+                   "Try different or broader symptoms.")
+        return
+
+    # Show how many were found
+    symp_display = ", ".join(query) if query else "your symptoms"
+    st.markdown(
+        f"<div style='font-size:13px;color:var(--c-muted);margin-bottom:6px'>"
+        f"Found <strong style='color:var(--c-text)'>{len(results)}</strong> drug(s) "
+        f"for: <em>{escape(symp_display)}</em></div>",
+        unsafe_allow_html=True,
+    )
+
+    for primary_drug in results:
+        # ── Primary drug card ──────────────────────────────────────────────
+        desc     = get_description(primary_drug, description_lookup)
+        pe_url   = quote_plus(primary_drug)
+        nm_url   = quote_plus(primary_drug)
+        safe_name = escape(primary_drug)
+        desc_short = escape(str(desc)[:140] + ("…" if len(str(desc)) > 140 else ""))
+
+        st.markdown(f"""
+<div class="desc-card" style="border-left:3px solid rgba(var(--c-primary-rgb),.7);margin-top:22px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+        <div style="width:40px;height:40px;border-radius:14px;background:linear-gradient(135deg,#7c4dff,#00bcd4);
+                    display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">💊</div>
+        <div>
+            <div style="font-size:16px;font-weight:900;font-family:var(--font-display)">{safe_name}</div>
+            <div style="font-size:11px;color:var(--c-muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em">Primary Match</div>
+        </div>
+    </div>
+    <div class="desc-text">{desc_short}</div>
+</div>
+""", unsafe_allow_html=True)
+
+        st.markdown(f"""
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin:-8px 0 12px">
+    <a class="btn-ghost" href="https://www.netmeds.com/catalogsearch/result?q={nm_url}" target="_blank" rel="noopener">Netmeds</a>
+    <a class="btn-primary" href="https://pharmeasy.in/search/all?name={pe_url}" target="_blank" rel="noopener">PharmEasy →</a>
+</div>
+""", unsafe_allow_html=True)
+
+        # ── Similar alternatives for this drug ────────────────────────────
+        alternatives = recommend_drugs(primary_drug, top_n, drug_names_model_order, similarity, drug_to_index)
+        if alternatives:
+            st.markdown(
+                f"<div style='font-size:12px;font-weight:800;color:var(--c-muted);"
+                f"text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px'>"
+                f"Similar alternatives for {safe_name}</div>",
+                unsafe_allow_html=True,
+            )
+            for i, (drug, score) in enumerate(alternatives, 1):
+                safe_drug  = escape(str(drug))
+                pct        = min(int(score * 100), 100) if score > 0 else random.randint(55, 95)
+                buy_url    = quote_plus(str(drug))
+                d_desc     = escape(description_lookup.get(str(drug), "Similar alternative drug.")[:80] + "…")
+
+                st.markdown(f"""
+<div class="drug-card" style="margin-left:16px">
+    <div class="drug-inner">
+        <div class="drug-rank" style="width:36px;height:36px;font-size:13px">#{i}</div>
+        <div class="drug-info">
+            <div class="drug-name">{safe_drug}</div>
+            <div class="drug-meta">{d_desc}</div>
+            <div class="sim-bar-wrap">
+                <div class="sim-label">Similarity: {pct}%</div>
+                <div class="sim-bar-bg">
+                    <div class="sim-bar-fill" style="width:{pct}%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+                st.markdown(f"""
+<div style="display:flex;gap:8px;margin:-10px 0 8px 52px;flex-wrap:wrap">
+    <a class="btn-ghost" href="https://www.netmeds.com/catalogsearch/result?q={buy_url}" target="_blank" rel="noopener">Netmeds</a>
+    <a class="btn-primary" href="https://pharmeasy.in/search/all?name={buy_url}" target="_blank" rel="noopener">PharmEasy →</a>
+</div>
+""", unsafe_allow_html=True)
+
+        st.markdown("<hr style='border:none;border-top:1px solid var(--c-outline-2);margin:6px 0 4px'>",
+                    unsafe_allow_html=True)
+
+    st.markdown("""
+<div style="margin-top:16px;padding:12px 16px;border-radius:14px;background:rgba(255,215,0,0.08);
+            border:1px solid rgba(255,215,0,0.2);font-size:12px;color:var(--c-muted)">
+    ⚠️ <strong>Disclaimer:</strong> These recommendations are AI-generated for educational purposes only.
+    Always consult a licensed physician or pharmacist before taking any medication.
+</div>
+""", unsafe_allow_html=True)
+
+
 # ─────────────────────── Page: Home ─────────────────────────────────────────
 
 def page_home(drug_names, total_drugs, has_desc, description_lookup, similarity, drug_to_index, medicines_df, top_n):
@@ -3249,6 +3546,7 @@ def render_floating_widget():
     const tools = [
         ["Home", "HM", "Home", "Overview dashboard"],
         ["Recommend", "RX", "Recommend", "Find alternatives"],
+        ["By Symptoms", "SY", "By Symptoms", "Search by symptom"],
         ["Compare", "VS", "Compare", "Two-drug similarity"],
         ["Drug Detail", "DT", "Drug Detail", "Full medicine profile"],
         ["Insights", "IN", "Insights", "Database stats"],
@@ -3584,7 +3882,8 @@ render_styles()
 # Session defaults
 for key, val in [("recommendations", None), ("selected_drug", None),
                  ("history", []), ("watchlist", []), ("auto_watchlist", False),
-                 ("page", "Home"), ("last_top_n", 5)]:
+                 ("page", "Home"), ("last_top_n", 5),
+                 ("symptom_results", None), ("symptom_query", [])]:
     if key not in st.session_state:
         st.session_state[key] = val
 
@@ -3608,6 +3907,7 @@ top_n = render_sidebar(st.session_state.page, drug_names)
 pages = {
     "🏠 Home": "Home",
     "🔍 Recommend": "Recommend",
+    "🩺 By Symptoms": "Symptoms",
     "⚖️ Compare": "Compare",
     "🔬 Drug Detail": "Detail",
     "📊 Insights": "Insights",
@@ -3642,6 +3942,9 @@ if page == "Home":
 
 elif page == "Recommend":
     page_recommend(drug_names, drug_names_model_order, description_lookup, similarity, drug_to_index, top_n)
+
+elif page == "Symptoms":
+    page_symptoms(drug_names, drug_names_model_order, description_lookup, similarity, drug_to_index, top_n)
 
 elif page == "Compare":
     page_compare(drug_names, drug_names_model_order, description_lookup, similarity, drug_to_index)

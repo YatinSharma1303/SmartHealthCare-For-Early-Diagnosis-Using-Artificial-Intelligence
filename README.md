@@ -7,7 +7,7 @@
 
 <!-- VERSION & CORE BADGES -->
 <p align="center">
-  <img src="https://img.shields.io/badge/v2.0.3-Material%20Design%203%20Expressive-6750a4?style=for-the-badge&labelColor=1a0a3c&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0xMiAyQzYuNDggMiAyIDYuNDggMiAxMnM0LjQ4IDEwIDEwIDEwIDEwLTQuNDggMTAtMTBTMTcuNTIgMiAxMiAyek0xMiAxNS41Yy0xLjM4IDAtMi41LTEuMTItMi41LTIuNXMxLjEyLTIuNSAyLjUtMi41IDIuNSAxLjEyIDIuNSAyLjUtMS4xMiAyLjUtMi41IDIuNXoiLz48L3N2Zz4=" />
+  <img src="https://img.shields.io/badge/v2.0.4-Material%20Design%203%20Expressive-6750a4?style=for-the-badge&labelColor=1a0a3c&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0xMiAyQzYuNDggMiAyIDYuNDggMiAxMnM0LjQ4IDEwIDEwIDEwIDEwLTQuNDggMTAtMTBTMTcuNTIgMiAxMiAyek0xMiAxNS41Yy0xLjM4IDAtMi41LTEuMTItMi41LTIuNXMxLjEyLTIuNSAyLjUtMi41IDIuNSAxLjEyIDIuNSAyLjUtMS4xMiAyLjUtMi41IDIuNXoiLz48L3N2Zz4=" />
 &nbsp;
   <img src="https://img.shields.io/badge/Python-3.11.9-3776AB?style=for-the-badge&labelColor=1a2a3c&logo=python&logoColor=ffd343" />
 &nbsp;
@@ -84,7 +84,7 @@
 
 ## ✨ Overview
 
-**SmartHealthCare AI v2.0.3** is a cutting-edge, multi-module medical intelligence platform. It brings together four distinct AI-powered healthcare tools — Disease Prediction, Drug Recommendation, Heart Risk Assessment, and a RAG Chatbot — under one unified **Material Design 3 Expressive** interface with full **dark / light theme support**, responsive layout, micro-animations, and a **floating speed-dial widget** on every page.
+**SmartHealthCare AI v2.0.4** is a cutting-edge, multi-module medical intelligence platform. It brings together four distinct AI-powered healthcare tools — Disease Prediction, Drug Recommendation, Heart Risk Assessment, and a RAG Chatbot — under one unified **Material Design 3 Expressive** interface with full **dark / light theme support**, responsive layout, micro-animations, and a **floating speed-dial widget** on every page.
 
 <br/>
 
@@ -100,7 +100,7 @@
 
 ```
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║             SmartHealthCare AI  v2.0.3  —  Material Design 3 Expressive       ║
+║             SmartHealthCare AI  v2.0.4  —  Material Design 3 Expressive       ║
 ║                                                                              ║
 ║  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐            ║
 ║  │ 🔍 Disease  │  │ 💊 Drug    │  │ ❤️  Heart  │  │ 🤖 Medibot │            ║
@@ -122,7 +122,7 @@
 
 ## 🆕 What's New — Latest Changes
 
-> This section documents **all recent additions and changes** to the codebase that expand upon the original v2.0.3 feature set.
+> This section documents **all recent additions and changes** to the codebase that expand upon the original v2.0.4 feature set.
 
 <br/>
 
@@ -198,7 +198,7 @@ This makes the conversation context immediately visible and the export action mo
 | 🏠 **Main entry** | `home.py` | Landing dashboard, health tips, risk awareness, self-assessment, symptom quick-check, vital signs, screening timeline, contact/footer, floating widget | ~4,335 lines |
 | 🎨 **Global theme** | `theme_config.py` | Shared dark/light theme tokens, sidebar fixes, Material Design 3 inspired CSS overrides | ~1,298 lines |
 | 🔍 **Disease AI page** | `pages/1_Disease-Prediction-and-medical-recommendation.py` | Random Forest symptom prediction, disease explorer, severity insights, history, medical recommendations | ~3,573 lines |
-| 💊 **MedMatch AI page** | `pages/2_drug_recommendation.py` | NLP/cosine drug recommendation, drug detail, compare, watchlist, interactions, A-Z browser, dosage guide | ~3,668 lines |
+| 💊 **MedMatch AI page** | `pages/2_drug_recommendation.py` | NLP/cosine drug recommendation, drug detail, compare, watchlist, interactions, A-Z browser, dosage guide | ~3,971 lines |
 | ❤️ **Heart risk page** | `pages/3_heart_Disease_Risk_Assesment.py` | LightGBM heart risk scoring, SHAP-style drivers, PDF/JSON export, wellness tools, scan studio | ~8,072 lines |
 | 🤖 **Medibot page** | `pages/4_Medibot.py` | RAG chatbot, FAISS retrieval, Groq LLM, voice input, symptom checker, medication reminders, saved answers | ~5,243 lines |
 
