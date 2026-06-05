@@ -7,7 +7,7 @@
 
 <!-- VERSION & CORE BADGES -->
 <p align="center">
-  <img src="https://img.shields.io/badge/v2.0.4-Material%20Design%203%20Expressive-6750a4?style=for-the-badge&labelColor=1a0a3c&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0xMiAyQzYuNDggMiAyIDYuNDggMiAxMnM0LjQ4IDEwIDEwIDEwIDEwLTQuNDggMTAtMTBTMTcuNTIgMiAxMiAyek0xMiAxNS41Yy0xLjM4IDAtMi41LTEuMTItMi41LTIuNXMxLjEyLTIuNSAyLjUtMi41IDIuNSAxLjEyIDIuNSAyLjUtMS4xMiAyLjUtMi41IDIuNXoiLz48L3N2Zz4=" />
+  <img src="https://img.shields.io/badge/v2.1.0-Material%20Design%203%20Expressive-6750a4?style=for-the-badge&labelColor=1a0a3c&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0xMiAyQzYuNDggMiAyIDYuNDggMiAxMnM0LjQ4IDEwIDEwIDEwIDEwLTQuNDggMTAtMTBTMTcuNTIgMiAxMiAyek0xMiAxNS41Yy0xLjM4IDAtMi41LTEuMTItMi41LTIuNXMxLjEyLTIuNSAyLjUtMi41IDIuNSAxLjEyIDIuNSAyLjUtMS4xMiAyLjUtMi41IDIuNXoiLz48L3N2Zz4=" />
 &nbsp;
   <img src="https://img.shields.io/badge/Python-3.11.9-3776AB?style=for-the-badge&labelColor=1a2a3c&logo=python&logoColor=ffd343" />
 &nbsp;
@@ -84,7 +84,7 @@
 
 ## ✨ Overview
 
-**SmartHealthCare AI v2.0.4** is a cutting-edge, multi-module medical intelligence platform. It brings together four distinct AI-powered healthcare tools — Disease Prediction, Drug Recommendation, Heart Risk Assessment, and a RAG Chatbot — under one unified **Material Design 3 Expressive** interface with full **dark / light theme support**, responsive layout, micro-animations, and a **floating speed-dial widget** on every page.
+**SmartHealthCare AI v2.1.0** is a cutting-edge, multi-module medical intelligence platform. It brings together four distinct AI-powered healthcare tools — Disease Prediction, Drug Recommendation, Heart Risk Assessment, and a RAG Chatbot — under one unified **Material Design 3 Expressive** interface with full **dark / light theme support**, responsive layout, micro-animations, and a **floating speed-dial widget** on every page.
 
 <br/>
 
@@ -92,7 +92,7 @@
 
 - Every page has a **persistent floating speed-dial navigation widget** (draggable, animated, keyboard-accessible) that lets users jump to any section or tab without scrolling
 - **Medibot** is a full 5-tab mini-app with live symptom checker, medication reminders, a lifestyle health score quiz, saved answer bookmarks, a chat stats bar, and a **cross-browser voice input** system
-- **Drug Recommendation** now features 9 navigation pages including new **Drug Detail**, **Watchlist**, and **Drug Interaction Checker** pages
+- **Drug Recommendation** now features 10 navigation pages including new **By Symptoms**, **Drug Detail**, **Watchlist**, and **Drug Interaction Checker** pages
 - **Heart Disease Risk Assessment** has 6 deep tabs covering assessment, SHAP insights, tools, a wellness hub, history trends, and a project overview
 - **Home** features an interactive quick health self-assessment, symptom triage check, vital signs reference, recommended health screening timeline, and technology stack section
 
@@ -100,7 +100,7 @@
 
 ```
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║             SmartHealthCare AI  v2.0.4  —  Material Design 3 Expressive       ║
+║             SmartHealthCare AI  v2.1.0  —  Material Design 3 Expressive       ║
 ║                                                                              ║
 ║  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐            ║
 ║  │ 🔍 Disease  │  │ 💊 Drug    │  │ ❤️  Heart  │  │ 🤖 Medibot │            ║
@@ -174,6 +174,27 @@ This makes the conversation context immediately visible and the export action mo
 
 <br/>
 
+### 🎨 Scan Studio — Sample Demo Images
+
+A new `demo/` folder has been added to the repository containing four pre-supplied cardiac scan images for immediate use in the **Scan Studio** tab of the Heart Risk module:
+
+| File | Scan Type | Description |
+|---|---|---|
+| `demo/ct.png` | CT Scan | Computed tomography cardiac image (~1.9 MB) |
+| `demo/echo.png` | Echocardiogram | Ultrasound cardiac image (~940 KB) |
+| `demo/mri.png` | MRI Scan | Magnetic resonance cardiac image (~1.7 MB) |
+| `demo/xray.png` | X-Ray | Chest X-ray image (~1.6 MB) |
+
+Users can upload any of these to the Scan Studio to instantly see the 6-panel local enhancement view without needing a personal scan file.
+
+<br/>
+
+### 🩺 Drug Recommendation — Symptom-Based Drug Finder (10th Page)
+
+A **10th navigation page** has been added to the Drug module: **By Symptoms** (`🩺 By Symptoms`). This page allows users to select one or more medical symptoms and receive AI-matched drug recommendations without requiring any external API call — the matching is done locally via a built-in `SYMPTOM_REASON_MAP` that maps symptoms to drug reason categories in `medicine.csv`. Up to 12 ranked drug results are returned with cosine-similar alternatives for each.
+
+<br/>
+
 ### 📐 Responsive & Layout Improvements
 
 - Streamlit's sidebar toggle button (`[data-testid="stSidebarCollapsedControl"]`) overflow is now clipped via `Material Symbols Rounded` ligature constraints — fixing text bleed on narrow viewports
@@ -195,12 +216,12 @@ This makes the conversation context immediately visible and the export action mo
 
 | Layer | File / Folder | What It Does | Current Size |
 |---|---|---|---:|
-| 🏠 **Main entry** | `home.py` | Landing dashboard, health tips, risk awareness, self-assessment, symptom quick-check, vital signs, screening timeline, contact/footer, floating widget | ~4,335 lines |
-| 🎨 **Global theme** | `theme_config.py` | Shared dark/light theme tokens, sidebar fixes, Material Design 3 inspired CSS overrides | ~1,298 lines |
-| 🔍 **Disease AI page** | `pages/1_Disease-Prediction-and-medical-recommendation.py` | Random Forest symptom prediction, disease explorer, severity insights, history, medical recommendations | ~3,573 lines |
-| 💊 **MedMatch AI page** | `pages/2_drug_recommendation.py` | NLP/cosine drug recommendation, drug detail, compare, watchlist, interactions, A-Z browser, dosage guide | ~3,971 lines |
-| ❤️ **Heart risk page** | `pages/3_heart_Disease_Risk_Assesment.py` | LightGBM heart risk scoring, SHAP-style drivers, PDF/JSON export, wellness tools, scan studio | ~8,072 lines |
-| 🤖 **Medibot page** | `pages/4_Medibot.py` | RAG chatbot, FAISS retrieval, Groq LLM, voice input, symptom checker, medication reminders, saved answers | ~5,243 lines |
+| 🏠 **Main entry** | `home.py` | Landing dashboard, health tips, risk awareness, self-assessment, symptom quick-check, vital signs, screening timeline, contact/footer, floating widget | ~4,334 lines |
+| 🎨 **Global theme** | `theme_config.py` | Shared dark/light theme tokens, sidebar fixes, Material Design 3 inspired CSS overrides | ~1,297 lines |
+| 🔍 **Disease AI page** | `pages/1_Disease-Prediction-and-medical-recommendation.py` | Random Forest symptom prediction, disease explorer, severity insights, history, medical recommendations | ~3,572 lines |
+| 💊 **MedMatch AI page** | `pages/2_drug_recommendation.py` | NLP/cosine drug recommendation, symptom-based drug finder, drug detail, compare, watchlist, interactions, A-Z browser, dosage guide | ~3,970 lines |
+| ❤️ **Heart risk page** | `pages/3_heart_Disease_Risk_Assesment.py` | LightGBM heart risk scoring, SHAP-style drivers, PDF/JSON export, wellness tools, scan studio | ~8,071 lines |
+| 🤖 **Medibot page** | `pages/4_Medibot.py` | RAG chatbot, FAISS retrieval, Groq LLM, voice input, symptom checker, medication reminders, saved answers | ~5,242 lines |
 
 <br/>
 
@@ -246,8 +267,12 @@ This makes the conversation context immediately visible and the export action mo
 | `utils/hri.png` | ~83 KB | 739 × 470 | Heart Risk module screenshot |
 | `utils/mbi.png` | ~75 KB | 723 × 497 | Medibot module screenshot |
 | `utils/home2.png` | ~209 KB | 2813 × 1875 | Home hero image in the app |
-| `utils/ph2.png`, `utils/ph3.png`, `utils/ph4.png` | mixed | mixed | Sidebar/branding/medical visuals |
+| `utils/medss.png` | ~150 KB | mixed | Medibot banner image in the app |
 | `utils/yatin_sharma_github_dp.svg` | ~25 KB | SVG | Creator/GitHub profile branding |
+| `demo/ct.png` | ~1.9 MB | mixed | 🆕 Sample CT scan for Scan Studio demo |
+| `demo/echo.png` | ~940 KB | mixed | 🆕 Sample echocardiogram for Scan Studio demo |
+| `demo/mri.png` | ~1.7 MB | mixed | 🆕 Sample MRI scan for Scan Studio demo |
+| `demo/xray.png` | ~1.6 MB | mixed | 🆕 Sample X-ray for Scan Studio demo |
 
 <br/>
 
@@ -284,9 +309,10 @@ This makes the conversation context immediately visible and the export action mo
   RandomForest.pkl   similarity.joblib   best_model.pkl      FAISS index
   Training.csv       medicine_dict.pkl   cbe_encoder.pkl     + Groq LLM
   Symptom CSVs       medicine.csv        BRFSS 2022          + MiniLM-L6
-                     + Watchlist         + PDF Export        + Whisper API
-                     + Drug Detail                           + MediaRecorder
-                     + Interactions                          + Chat Stats Bar
+                     + By Symptoms       + PDF Export        + Whisper API
+                     + Watchlist         + Scan Studio       + MediaRecorder
+                     + Drug Detail       + 7 Tabs            + Chat Stats Bar
+                     + Interactions
          │                  │                   │                   │
          └──────────────────┴───────────────────┴───────────────────┘
                                        │
@@ -607,7 +633,7 @@ User Symptoms
 | 🧠 Model assets | `medicine_dict.pkl`, `similarity.joblib` |
 | 📊 Data | `data/Drug reccomendation/medicine.csv` with 9,720 medicine records |
 | ⚙️ Algorithm | Precomputed cosine similarity over medicine features/text representation |
-| 🧭 Internal pages | Home, Recommend, Compare, Drug Detail, Insights, Watchlist, Interactions, A-Z Browser, Dosage |
+| 🧭 Internal pages | Home, Recommend, By Symptoms, Compare, Drug Detail, Insights, Watchlist, Interactions, A-Z Browser, Dosage |
 
 **Code-verified recommendation flow:**
 
@@ -638,7 +664,7 @@ flowchart LR
 
 **File:** `pages/2_drug_recommendation.py` &nbsp;|&nbsp; **Fonts:** Nunito / Outfit (display) + Space Grotesk / DM Sans (body) &nbsp;|&nbsp; **Lines:** ~3,667
 
-MedMatch AI uses **Natural Language Processing and a precomputed Cosine Similarity Matrix** to find medicines with similar properties to any selected drug. The module now features **9 sidebar navigation pages** covering everything from drug search to side-by-side comparison, personal watchlist management, and multi-drug interaction analysis.
+MedMatch AI uses **Natural Language Processing and a precomputed Cosine Similarity Matrix** to find medicines with similar properties to any selected drug. The module now features **10 navigation pages** covering everything from drug search to symptom-based discovery, side-by-side comparison, personal watchlist management, and multi-drug interaction analysis.
 
 <br/>
 
@@ -648,6 +674,7 @@ MedMatch AI uses **Natural Language Processing and a precomputed Cosine Similari
 |---|:---:|---|
 | 🏠 **Home** | `Home` | Module landing — stats row, hero banner, featured drugs carousel |
 | 🔍 **Recommend** | `Recommend` | Core drug search + Top-5 cosine-similar alternatives |
+| 🩺 **By Symptoms** | `Symptoms` | 🆕 Symptom-based drug finder — select symptoms to get AI-matched drug recommendations |
 | ⚖️ **Compare** | `Compare` | 🆕 Side-by-side two-drug comparison with similarity score and buy links |
 | 🔬 **Drug Detail** | `Drug Detail` | 🆕 Full single-medicine profile — composition, description, similar neighbours, interaction guidance |
 | 📊 **Insights** | `Insights` | Database analytics — category breakdown, similarity histograms |
@@ -662,6 +689,7 @@ MedMatch AI uses **Natural Language Processing and a precomputed Cosine Similari
 
 | Feature | Details |
 |---|---|
+| 🩺 **By Symptoms Page** | Select one or more symptoms from the built-in list; the AI matches relevant drug categories from the database using a `SYMPTOM_REASON_MAP` and returns up to 12 ranked drug results with similarity alternatives — no external API required |
 | ⚖️ **Drug Compare Page** | Select any two drugs and compare descriptions, compositions, cosine similarity score, and PharmEasy buy links side-by-side |
 | 🔬 **Drug Detail Page** | Deep-dive profile for any single medicine: description, composition, top similar alternatives, interaction guidance section, and one-click save to Watchlist |
 | 📋 **Personal Watchlist** | Save drugs manually or automatically (via the Auto-add toggle on Recommend page); view all saved medicines, see their similarity neighbours, and clear the list |
@@ -701,6 +729,7 @@ medicine.csv (11K drugs with descriptions)
   Top 5 most similar drugs retrieved + scored
           │
           ├──► Recommend page: display recommendation cards
+          ├──► By Symptoms: symptom → SYMPTOM_REASON_MAP → matched drugs (no API)
           ├──► Compare page: two-drug side-by-side view
           ├──► Drug Detail: full profile + interaction guidance
           ├──► Watchlist: session-persistent drug saves
@@ -715,6 +744,7 @@ medicine.csv (11K drugs with descriptions)
 |:---:|---|---|---|
 | `HM` | Home | nav | Home |
 | `RC` | Recommend | nav | Recommend |
+| `SY` | By Symptoms | nav | By Symptoms |
 | `VS` | Compare | nav | Compare |
 | `DT` | Drug Detail | nav | Drug Detail |
 | `WL` | Watchlist | nav | Watchlist |
@@ -777,7 +807,7 @@ The heart disease risk engine takes 20 health and lifestyle inputs and runs them
 
 <br/>
 
-**✦ Six-Tab Layout**
+**✦ Seven-Tab Layout**
 
 | Tab | Contents |
 |---|---|
@@ -787,6 +817,7 @@ The heart disease risk engine takes 20 health and lifestyle inputs and runs them
 | **Wellness Hub** | Heart health FAQ, knowledge quiz, goal tracker, health journal with CSV export |
 | **History** | Assessment history log, risk trend line chart |
 | **About** | Project overview, data sources, model card |
+| **Scan Studio** | Upload cardiac scans (JPG/PNG/WEBP); view 6-panel local image enhancements with quality analytics and per-panel downloads |
 
 <br/>
 
@@ -844,6 +875,7 @@ User inputs 20 health features
 | `WL` | Wellness | tab | Wellness |
 | `HS` | History | tab | History |
 | `AB` | About | tab | About |
+| `SC` | Scan Studio | tab | Scan Studio |
 
 ---
 
@@ -1402,10 +1434,10 @@ SmartHealthCare-For-Early-Diagnosis-Using-Artificial-Intelligence/
 ├── 📜 LICENSE                              # MIT License
 │
 ├── 📂 pages/                               # Streamlit multi-page modules
-│   ├── 1_Disease-Prediction-and-medical-recommendation.py   # DM Sans, 3261 lines
-│   ├── 2_drug_recommendation.py                             # Nunito/Outfit, 3527 lines
-│   ├── 3_heart_Disease_Risk_Assesment.py                    # Sora/DM Sans, 5661 lines
-│   └── 4_Medibot.py                                         # DM Sans, 4802 lines
+│   ├── 1_Disease-Prediction-and-medical-recommendation.py   # DM Sans, 3572 lines
+│   ├── 2_drug_recommendation.py                             # Nunito/Outfit, 3970 lines
+│   ├── 3_heart_Disease_Risk_Assesment.py                    # Sora/DM Sans, 8071 lines
+│   └── 4_Medibot.py                                         # DM Sans, 5242 lines
 │
 ├── 📂 models/                              # Pre-trained ML models
 │   ├── first_feature_models/
@@ -1447,12 +1479,17 @@ SmartHealthCare-For-Early-Diagnosis-Using-Artificial-Intelligence/
 │
 ├── 📂 utils/                              # Assets and CSS
 │   ├── yatin_sharma_github_dp.svg         # Creator profile SVG
-│   ├── heart_disease.jpg
 │   ├── home2.png                          # Home hero image
 │   ├── medss.png                          # Medibot banner image
-│   ├── ph2.png – ph4.png                  # Placeholder images
+│   ├── combined.png / dpi-s.png / dri-s.png / hri-s.png / mbi-s.png / home-s.png  # Module screenshots
 │   ├── style.css                          # Legacy CSS v2
 │   └── style_v1.css                       # Legacy CSS v1
+│
+├── 📂 demo/                               # 🆕 Sample cardiac scan images for Scan Studio
+│   ├── ct.png                             # CT scan sample
+│   ├── echo.png                           # Echocardiogram sample
+│   ├── mri.png                            # MRI scan sample
+│   └── xray.png                           # X-ray sample
 │
 └── 📂 Research Notebooks/
     ├── Disease Prediction and recommendation/
@@ -1805,6 +1842,7 @@ This project is an applied AI healthcare prototype, so validation has two sides:
 - [x] Disease prediction with 42 disease classes and full recommendation cards
 - [x] Drug recommendation with NLP cosine similarity and PharmEasy buy links
 - [x] Drug Dosage Safety Checker (6 medicine categories)
+- [x] **Drug By Symptoms** — symptom-to-drug matching via local SYMPTOM_REASON_MAP (no external API)
 - [x] **Drug Compare** — side-by-side two-drug similarity and description view
 - [x] **Drug Detail** — full single-drug profile with interaction guidance
 - [x] **Drug Watchlist** — session-persistent personal drug save list with auto-add toggle

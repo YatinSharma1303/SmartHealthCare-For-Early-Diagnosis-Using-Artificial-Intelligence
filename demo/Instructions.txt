@@ -1,0 +1,186 @@
+============================================================
+  SmartHealthCare AI — Scan Studio  |  Demo Images Guide
+============================================================
+
+This folder contains 4 sample cardiac scan images you can
+use to test the Scan Studio tab in the Heart Risk Assessment
+module. No real scan? No problem — just use one of these.
+
+------------------------------------------------------------
+  FILES IN THIS FOLDER
+------------------------------------------------------------
+
+  ct.png    →  CT Scan (Computed Tomography)
+  echo.png  →  Echocardiogram (Ultrasound)
+  mri.png   →  MRI Scan (Magnetic Resonance Imaging)
+  xray.png  →  Chest X-Ray
+
+All files are JPG/PNG format and are accepted directly by
+the Scan Studio uploader.
+
+------------------------------------------------------------
+  HOW TO TEST SCAN STUDIO  —  STEP BY STEP
+------------------------------------------------------------
+
+STEP 1 — Launch the app
+  Run the app if it is not already running:
+
+      streamlit run home.py
+
+  Then open your browser at:  http://localhost:8501
+
+------------------------------------------------------------
+
+STEP 2 — Open the Heart Risk Assessment module
+  In the left sidebar, click:
+
+      ❤️  Heart Disease Risk Assessment
+
+  The Heart Risk page will load.
+
+------------------------------------------------------------
+
+STEP 3 — Navigate to the Scan Studio tab
+  At the top of the page you will see 7 tabs:
+
+      🩺 Assessment | 📊 Insights | 🛠️ Tools |
+      💪 Wellness   | 🕓 History  | ℹ️ About  | 🎨 Scan Studio
+
+  Click  👉  🎨 Scan Studio
+
+------------------------------------------------------------
+
+STEP 4 — Upload a demo image
+  Inside the Scan Studio tab you will see the upload zone:
+
+      "Drop your cardiac scan here"
+
+  Click the  Browse files  button (or drag and drop), then
+  navigate to the  demo/  folder inside the project and
+  select any one of the 4 images:
+
+      demo/ct.png       ← good for edge detection test
+      demo/echo.png     ← good for contrast + heatmap test
+      demo/mri.png      ← good for sharpening test
+      demo/xray.png     ← good for invert (negative) test
+
+  Accepted formats: JPG, JPEG, PNG, WEBP
+
+------------------------------------------------------------
+
+STEP 5 — Check the Image Quality Stats Bar
+  After upload, a stats bar appears automatically showing:
+
+      🖼️  Resolution (px)   —  width × height of the image
+      💾  File Size          —  size in KB
+      🔬  Image Quality      —  Excellent / Good / Fair / Poor
+                                (based on contrast score)
+      ☀️  Avg Brightness     —  average pixel brightness /255
+
+  Verify all 4 stats cards are showing real values.
+  If they appear — the image loaded correctly. ✓
+
+------------------------------------------------------------
+
+STEP 6 — Check the 6-Panel Enhancement View
+  Scroll down. You will see 6 panels arranged in a 3×2 grid.
+  Each panel applies a different image processing technique:
+
+  ┌──────────────────┬───────────────────────────────────────┐
+  │  Panel           │  What it does                         │
+  ├──────────────────┼───────────────────────────────────────┤
+  │ 📷 Original      │  Unmodified scan as uploaded          │
+  │ ⚡ Contrast Boost │  Auto-contrast + 2.2× enhancement     │
+  │                  │  Reveals shadows and hidden regions    │
+  │ 🔲 Edge Detection│  FIND_EDGES filter                    │
+  │                  │  Highlights structural boundaries      │
+  │ 🌡️ False Color   │  Intensity → RGB heatmap              │
+  │                  │  Hot = bright, Cool = dark             │
+  │ 🔍 Sharpened     │  Unsharp mask + 2.5× sharpness        │
+  │                  │  Clarifies fine details                │
+  │ 🔄 Inverted      │  Luminosity inversion                 │
+  │                  │  X-ray style negative view             │
+  └──────────────────┴───────────────────────────────────────┘
+
+  All 6 panels must render with the processed image visible.
+  If all 6 images appear — Scan Studio is working. ✓
+
+------------------------------------------------------------
+
+STEP 7 — Check the Percentile Normalized View
+  Scroll further down past the 6 panels.
+  You will see a side-by-side comparison:
+
+      ⬛ Original   |   ✨ Percentile Normalized
+
+  The normalized view clips extreme pixel values
+  (2nd–98th percentile) and stretches the contrast range.
+  This is best for revealing faint structural detail.
+
+  Both images must be visible side by side. ✓
+
+------------------------------------------------------------
+
+STEP 8 — Test the Download buttons
+  Under each of the 6 panels there is a  💾 Download  button.
+  Under the normalized view there is a  💾 Download Normalized View  button.
+
+  Click any Download button. Your browser should prompt you
+  to save a PNG file (e.g. scan_contrast_boost.png).
+
+  If the file downloads — exports are working. ✓
+
+------------------------------------------------------------
+
+STEP 9 — Test with a different image
+  Go back to the upload zone and upload a second demo image
+  (e.g. if you used ct.png first, try xray.png now).
+
+  The stats bar and all 6 panels should refresh automatically
+  with the new image. Panel results are cached per image name
+  + size so switching images always generates fresh panels. ✓
+
+------------------------------------------------------------
+
+STEP 10 — Use the Floating Speed-Dial Widget (optional)
+  You can also navigate directly to Scan Studio using the
+  floating action button (FAB) at the bottom-right corner:
+
+      1. Click the purple  ✦  FAB button
+      2. Find and click  🎨 Scan Studio
+      3. The page will jump directly to the Scan Studio tab
+
+------------------------------------------------------------
+  QUICK PASS / FAIL CHECKLIST
+------------------------------------------------------------
+
+  [ ]  Stats bar shows Resolution, File Size, Quality, Brightness
+  [ ]  All 6 enhancement panels render with distinct results
+  [ ]  Percentile Normalized side-by-side view is visible
+  [ ]  At least one Download button saves a PNG file
+  [ ]  Switching to a second demo image refreshes all panels
+  [ ]  Clinical disclaimer is visible below the panels
+  [ ]  All processing happens locally — no external upload
+
+  If all 7 boxes pass → Scan Studio is fully functional. ✓
+
+------------------------------------------------------------
+  NOTES
+------------------------------------------------------------
+
+  •  All image processing is done locally in your browser
+     session. No scan data is sent to any server.
+
+  •  These demo images are for testing and educational
+     reference only and do not represent real patient data.
+
+  •  The Scan Studio does NOT perform medical diagnosis.
+     Always consult a qualified cardiologist or radiologist
+     for clinical interpretation of cardiac imaging.
+
+  •  Supported upload formats:  JPG  JPEG  PNG  WEBP
+
+============================================================
+  SmartHealthCare AI  |  Heart Risk Assessment  |  Scan Studio
+  Created by Yatin Sharma  —  github.com/YatinSharma1303
+============================================================
